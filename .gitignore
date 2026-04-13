@@ -10,3 +10,5 @@ collector/instances.db
 geoip/*.mmdb
 geoip/licence.txt
 clients/windows-audio/UberSDRAudio.exe
+
+.codex/
