@@ -5,14 +5,33 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import es.niceto.ubersdr.data.network.ConnectionApi
+import es.niceto.ubersdr.data.network.ConnectionService
 import es.niceto.ubersdr.presentation.radio.RadioViewModel
+import es.niceto.ubersdr.session.SessionRepository
 import es.niceto.ubersdr.ui.radio.RadioScreen
+import retrofit2.Retrofit
+import retrofit2.converter.moshi.MoshiConverterFactory
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val viewModel = RadioViewModel()
+        val moshi = Moshi.Builder()
+            .add(KotlinJsonAdapterFactory())
+            .build()
+
+        val retrofit = Retrofit.Builder()
+            .baseUrl("https://ubersdr.niceto.es/")
+            .addConverterFactory(MoshiConverterFactory.create(moshi))
+            .build()
+
+        val api = retrofit.create(ConnectionApi::class.java)
+        val service = ConnectionService(api)
+        val sessionRepository = SessionRepository(service)
+        val viewModel = RadioViewModel(sessionRepository)
 
         setContent {
             MaterialTheme {

@@ -8,5 +8,16 @@ data class RadioUiState(
     val bandwidthLowHz: Int = 50,
     val bandwidthHighHz: Int = 2700,
     val isConnected: Boolean = false,
-    val statusText: String = "Idle"
+    val statusText: String = "Idle",
+    val spectrumCenterFreqHz: Long? = null,
+    val spectrumBinCount: Int? = null,
+    val spectrumBinBandwidthHz: Double? = null,
+    val spectrumTotalBandwidthHz: Double? = null,
+    val lastSpecFrameSize: Int? = null,
+    val lastSpecPayloadSize: Int? = null,
+    val specFramesReceived: Long = 0L,
+    val specLastFlags: Int? = null,
+    val specBufferSize: Int? = null,
+    val specBufferMatchesBinCount: Boolean = false,
+    val latestSpectrumRow: ByteArray? = null
 )

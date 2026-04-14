@@ -151,3 +151,29 @@ Creates radiod spectrum channel:
 ## 5. Shared Session Linking
 
 Both WebSockets use:
+
+---
+
+## 6. Android Validation Status
+
+Android client session bootstrap validated against production backend behind Cloudflare tunnel.
+
+Validated sequence:
+1. `POST /connection`
+2. `GET /api/description`
+3. open audio `WS /ws`
+4. wait briefly before opening spectrum `WS`
+5. open spectrum `WS /ws/user-spectrum`
+
+Validated runtime result:
+- `default_frequency = 7062000`
+- `default_mode = lsb`
+- audio websocket status = `OPEN`
+
+Operational note:
+Opening spectrum `WS` too quickly after audio `WS` may trigger backend rate limiting (`HTTP 429`). A short delay between both `WS` openings avoids this in current deployment.
+
+Still not implemented at this stage:
+- Opus decode/playback
+- spectrum config parsing/rendering
+- persistence

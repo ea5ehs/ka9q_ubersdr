@@ -1,124 +1,127 @@
-# Visión General de la Arquitectura de UberSDR
+# Flujo de Conexión Android UberSDR
 
 ## Estado
-Confirmado (basado en inspección del repositorio y análisis asistido con Codex)
-
-## Fuente
-Inspección manual + exploración asistida con Codex
+Validado en cliente Android real contra backend de producción
 
 ## Última revisión
-2026-04-11
+2026-04-14
 
 ---
 
-## 1. Propósito
+## 1. Secuencia real de conexión
 
-Este repositorio implementa la capa de aplicación del sistema UberSDR.
+Orden confirmado:
 
-Se sitúa delante del motor SDR (radiod, de ka9q-radio) y proporciona:
+1. `POST /connection`
+2. `GET /api/description`
+3. abrir WebSocket de audio `/ws`
+4. esperar brevemente
+5. abrir WebSocket de spectrum `/ws/user-spectrum?user_session_id=...&mode=binary8`
 
-- gestión de sesiones de usuario
-- APIs WebSocket (audio, control, espectro)
-- interfaz web y paneles
-- decodificadores digitales y analítica
-- herramientas de administración y configuración
+La sesión queda operativa cuando:
 
----
-
-## 2. Arquitectura de alto nivel
-
-radiod (motor SDR)
-    ↓ (multicast / control)
-UberSDR (backend en Go)
-    ↓ (WebSocket / HTTP)
-Clientes (web, Android, escritorio)
+- `POST /connection` devuelve `allowed=true`
+- audio WS entra en estado `OPEN`
+- spectrum WS entra en estado `OPEN`
+- llega `config`
 
 ---
 
-## 3. Responsabilidades principales
+## 2. Bootstrap HTTP
 
-### 3.1 Gestión de sesiones
+### `POST /connection`
 
-Cada usuario tiene:
+Uso:
 
-- frecuencia, modo, ancho de banda
-- canal asociado en radiod (SSRC)
-- audio y espectro
+- validar acceso
+- asociar `user_session_id`
+- obtener estado `allowed`
 
-Archivo principal:
-- session.go
+Notas:
 
----
+- Android genera `user_session_id` al iniciar la sesión.
+- El mismo `user_session_id` se reutiliza en audio y spectrum.
+- No se deben abrir WebSocket antes de este paso.
 
-### 3.2 Integración con radiod
+### `GET /api/description`
 
-- multicast UDP
-- control TLV
+Uso:
 
-Archivo principal:
-- radiod.go
+- leer `default_frequency`
+- leer `default_mode`
+- leer límites y metadatos del servidor
 
----
+Resultado validado en cliente Android:
 
-### 3.3 WebSockets
-
-Audio/control:
-/ws
-
-Espectro:
-/ws/user-spectrum
-
-Archivos:
-- websocket.go
-- user_spectrum_websocket.go
+- `default_frequency = 7062000`
+- `default_mode = lsb`
 
 ---
 
-### 3.4 Flujo de audio
+## 3. Audio WS
 
-radiod → RTP → audio.go → sesión → websocket → cliente
+Endpoint:
 
----
+```text
+/ws?user_session_id=<uuid>&frequency=<hz>&mode=<mode>&format=opus&version=2&bandwidthLow=<hz>&bandwidthHigh=<hz>
+```
 
-### 3.5 Flujo de espectro
+Estado esperado:
 
-radiod → STATUS → user_spectrum.go → sesión → websocket → cliente
-
----
-
-### 3.6 Frontend
-
-static/
-
-Archivos importantes:
-- app.js
-- spectrum-display.js
-- websocket-manager.js
+- `AUDIO WS CONNECTING`
+- `AUDIO WS OPEN`
 
 ---
 
-### 3.7 Decodificadores
+## 4. Espera breve antes de spectrum
 
-- decoder*.go
-- audio_extensions/
+Observación validada:
 
----
+- abrir spectrum inmediatamente tras audio puede provocar `HTTP 429 Too Many Requests`
 
-### 3.8 Administración
+Contexto observado:
 
-admin.go
+- backend detrás de Cloudflare Tunnel o protección anti flood equivalente
 
----
+Mitigación validada:
 
-## 4. Modelo mental
-
-radiod es el motor SDR  
-UberSDR es la capa de aplicación
+- introducir una espera breve entre `AUDIO WS OPEN` y la apertura de spectrum
 
 ---
 
-## 5. Notas
+## 5. Spectrum WS
 
-- Parte del mapeo de frecuencia está en frontend
-- Backend y frontend deben coincidir
-- El diseño no es completamente modular
+Endpoint:
+
+```text
+/ws/user-spectrum?user_session_id=<uuid>&mode=binary8
+```
+
+Estado esperado:
+
+- `SPECTRUM WS CONNECTING`
+- `SPECTRUM WS OPEN`
+
+Comportamiento confirmado:
+
+- el cliente puede enviar `{"type":"get_status"}`
+- el backend puede enviar `config`, `pong` o `error`
+- `config` puede emitirse al abrir la sesión
+
+---
+
+## 6. Notas de implementación Android
+
+Validado en cliente real:
+
+- bootstrap HTTP completo operativo
+- audio WS operativo
+- spectrum WS operativo
+- `config` recibido y parseado
+- renderer básico de waterfall operativo
+
+Implicaciones:
+
+- no asumir que spectrum responde como texto
+- no abrir spectrum demasiado rápido tras audio
+- no asumir frames completos continuos en waterfall

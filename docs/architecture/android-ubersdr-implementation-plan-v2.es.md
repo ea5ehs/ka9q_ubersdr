@@ -138,6 +138,19 @@ Qué no debe condicionar el arranque:
 - último estado de radio
 - settings de UI
 
+## Fase actual: bootstrap HTTP
+
+Estado actual confirmado en `android-client`:
+
+1. `POST /connection`
+2. `GET /api/description`
+
+En esta fase:
+
+- todavía no se abren WebSockets
+- todavía no hay audio activo
+- todavía no hay spectrum activo
+
 # 3. Stack técnico recomendado
 
 - lenguaje: Kotlin
@@ -216,8 +229,9 @@ Distribución concreta:
 Hace:
 
 - coordina `POST /connection`
+- coordina `GET /api/description`
 - crea y recrea `user_session_id`
-- orquesta audio WS + spectrum WS
+- en fases posteriores, orquesta audio WS + spectrum WS
 
 Entradas:
 
