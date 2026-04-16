@@ -1,0 +1,4 @@
+es.niceto.ubersdr.test.app-updated_navigation_xml-0 D:\dev\ka9q_ubersdr\android-client\app\build\generated\updated_navigation_xml\debugAndroidTest
+es.niceto.ubersdr.test.app-packageDebugAndroidTestResources-1 D:\dev\ka9q_ubersdr\android-client\app\build\intermediates\incremental\debugAndroidTest\packageDebugAndroidTestResources\merged.dir
+es.niceto.ubersdr.test.app-packageDebugAndroidTestResources-2 D:\dev\ka9q_ubersdr\android-client\app\build\intermediates\incremental\debugAndroidTest\packageDebugAndroidTestResources\stripped.dir
+es.niceto.ubersdr.test.app-debugAndroidTest-3 D:\dev\ka9q_ubersdr\android-client\app\build\intermediates\merged_res\debugAndroidTest\mergeDebugAndroidTestResources

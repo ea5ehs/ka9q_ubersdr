@@ -1,5 +1,6 @@
 package es.niceto.ubersdr.presentation.radio
 
+import es.niceto.ubersdr.data.network.dto.BandDto
 import es.niceto.ubersdr.model.RadioMode
 
 data class RadioUiState(
@@ -8,5 +9,19 @@ data class RadioUiState(
     val bandwidthLowHz: Int = 50,
     val bandwidthHighHz: Int = 2700,
     val isConnected: Boolean = false,
-    val statusText: String = "Idle"
+    val statusText: String = "Idle",
+    val audioVolume: Float = 1f,
+    val audioMuted: Boolean = false,
+    val spectrumCenterFreqHz: Long? = null,
+    val spectrumBinCount: Int? = null,
+    val spectrumBinBandwidthHz: Double? = null,
+    val spectrumTotalBandwidthHz: Double? = null,
+    val lastSpecFrameSize: Int? = null,
+    val lastSpecPayloadSize: Int? = null,
+    val specFramesReceived: Long = 0L,
+    val specLastFlags: Int? = null,
+    val specBufferSize: Int? = null,
+    val specBufferMatchesBinCount: Boolean = false,
+    val latestSpectrumRow: ByteArray? = null,
+    val availableBands: List<BandDto> = emptyList()
 )

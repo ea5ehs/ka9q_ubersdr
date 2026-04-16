@@ -1,13 +1,13 @@
 # Mapeo de Frecuencia en Frontend
 
 ## Estado
-Parcialmente confirmado (requiere validación en ejecución)
+Confirmado en el cliente Android actual
 
 ## Fuente
 Análisis asistido con Codex + inspección manual
 
 ## Última revisión
-2026-04-11
+2026-04-15
 
 ---
 
@@ -80,6 +80,22 @@ Asume:
 
 - puede mantener orden FFT
 
+Regla operativa:
+
+- si el spectrum binario llega en orden FFT crudo, el cliente no debe pintarlo tal cual
+- antes de dibujar izquierda->derecha en frecuencia debe aplicar `unwrap` o `fftshift` de media anchura
+- la geometría puede ser correcta y aun así la imagen ser engañosa si falta este paso
+
+Síntoma típico:
+
+- una señal parece cambiar de lado al hacer zoom aunque `centerFreq`, eje, tap y cursor usen el mapping correcto
+
+Hallazgo crítico validado:
+
+- `binary8` llega en orden FFT crudo
+- el problema no estaba en la geometría de frecuencia sino en el orden visual de bins
+- el cliente Android actual corrige esto aplicando `unwrap` de media anchura antes de pintar
+
 ---
 
 ## 7. Riesgos de divergencia
@@ -133,3 +149,19 @@ sin mover datos reales
 - El backend no define la visualización final
 - El frontend es determinante
 - Desajustes provocan errores visuales
+
+## 10. Estado actual y límites
+
+Estado actual validado en Android:
+
+- tap-to-tune funcional
+- hover funcional
+- cursor de sintonía coherente con el eje
+- zoom/pan funcionales
+- waterfall correcto tras fix de `unwrap`
+
+Limitaciones actuales:
+
+- la regla visible de frecuencia sigue siendo simplificada respecto al cliente web completo
+- no hay indicador visual de ancho de banda todavía
+- la UI sigue siendo técnica y no final

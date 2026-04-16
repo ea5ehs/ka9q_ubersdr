@@ -1,0 +1,7 @@
+es.niceto.ubersdr.app-pngs-0 D:\dev\ka9q_ubersdr\android-client\app\build\generated\res\pngs\debug
+es.niceto.ubersdr.app-updated_navigation_xml-1 D:\dev\ka9q_ubersdr\android-client\app\build\generated\updated_navigation_xml\debug
+es.niceto.ubersdr.app-packageDebugResources-2 D:\dev\ka9q_ubersdr\android-client\app\build\intermediates\incremental\debug\packageDebugResources\merged.dir
+es.niceto.ubersdr.app-packageDebugResources-3 D:\dev\ka9q_ubersdr\android-client\app\build\intermediates\incremental\debug\packageDebugResources\stripped.dir
+es.niceto.ubersdr.app-debug-4 D:\dev\ka9q_ubersdr\android-client\app\build\intermediates\merged_res\debug\mergeDebugResources
+es.niceto.ubersdr.app-debug-5 D:\dev\ka9q_ubersdr\android-client\app\src\debug\res
+es.niceto.ubersdr.app-main-6 D:\dev\ka9q_ubersdr\android-client\app\src\main\res

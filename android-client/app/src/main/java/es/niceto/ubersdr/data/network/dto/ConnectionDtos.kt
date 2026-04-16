@@ -3,7 +3,7 @@ package es.niceto.ubersdr.data.network.dto
 import com.squareup.moshi.Json
 
 data class ConnectionRequestDto(
-    @Json(name = "user_session_id")
+    @param:Json(name = "user_session_id")
     val userSessionId: String,
     val password: String? = null
 )

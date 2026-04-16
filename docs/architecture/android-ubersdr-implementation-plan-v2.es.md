@@ -25,6 +25,39 @@ Componentes principales:
 - `RadioViewModel`
 - capa de presentación separada de UI
 
+# Estado actual
+
+Estado validado actualmente en `android-client`:
+
+- pipeline de audio operativo: WS audio -> Opus -> PCM -> `AudioTrack`
+- waterfall operativo con `binary8` y reconstrucción `SPEC`
+- fix crítico de `unwrap` FFT aplicado en render
+- mapping de frecuencia coherente para tap, hover, cursor y eje
+- zoom, pan y `center tuned` operativos
+- sintonía manual con step operativo
+- volumen y mute visibles y operativos
+- modos disponibles para prueba real: `USB`, `LSB`, `AM`, `CWU`
+
+Limitaciones actuales:
+
+- CW sigue sin tratamiento fino de pitch/offset
+- la UI sigue siendo técnica y no final
+- los controles aún no están optimizados para producción
+- la regla visible de frecuencia sigue simplificada frente al cliente web
+- todavía no existe indicador visual de ancho de banda
+
+Pendientes inmediatos:
+
+- mejorar UI y compactar telemetría cuando convenga
+- añadir indicador visual de ancho de banda
+- aproximar la regla de frecuencia al cliente web
+- refinar controles de operación continua
+
+Prioridad próxima:
+
+- consolidar experiencia real con audio
+- mantener coherencia práctica con el cliente web UberSDR
+
 # 2. Decisiones revisadas para v2
 
 ## Package name definitivo
@@ -138,6 +171,18 @@ Qué no debe condicionar el arranque:
 - último estado de radio
 - settings de UI
 
+## Fase actual real
+
+Estado actual confirmado en `android-client`:
+
+1. `POST /connection`
+2. `GET /api/description`
+3. apertura de WS audio
+4. reproducción de audio real
+5. apertura diferida de WS spectrum
+6. `config` + frames `SPEC`
+7. render de waterfall interactivo
+
 # 3. Stack técnico recomendado
 
 - lenguaje: Kotlin
@@ -149,8 +194,8 @@ Qué no debe condicionar el arranque:
   - suficiente y estándar
 - audio: `AudioTrack`
   - mantiene el mejor encaje para streaming PCM controlado
-- decoder Opus: wrapper JNI sobre `libopus`
-  - elección práctica para el framing custom del backend
+- decoder Opus: librería Java Concentus en cliente Android actual
+  - suficiente para el framing custom Opus v2 ya implementado
 - persistencia:
   - v1 inicial: desactivada o muy mínima
   - si se usa, que sea `DataStore`, pero fuera del camino crítico
@@ -216,8 +261,9 @@ Distribución concreta:
 Hace:
 
 - coordina `POST /connection`
+- coordina `GET /api/description`
 - crea y recrea `user_session_id`
-- orquesta audio WS + spectrum WS
+- en fases posteriores, orquesta audio WS + spectrum WS
 
 Entradas:
 
@@ -298,8 +344,7 @@ Entradas:
 Outputs:
 
 - audio reproducido
-- `AudioPlaybackState`
-- métricas de señal
+- control local de volumen y mute
 
 ## `SpectrumRenderer`
 
@@ -307,6 +352,7 @@ Hace:
 
 - mantiene un buffer de bins
 - aplica full/delta
+- aplica `unwrap` visual de media anchura antes de pintar
 - pinta líneas en un `Bitmap` desplazable
 
 Entradas:
@@ -392,8 +438,7 @@ Se mantiene:
 2. parsear header v2
 3. extraer `opusData`
 4. decodificar Opus
-5. bufferizar
-6. reproducir con `AudioTrack`
+5. reproducir con `AudioTrack`
 
 Decisiones prácticas:
 
@@ -412,9 +457,10 @@ Se mantiene:
 2. parsear `config`
 3. parsear `SPEC`
 4. aplicar full/delta
-5. convertir bins a línea de color
-6. desplazar waterfall en `Bitmap`
-7. invalidar render Compose
+5. aplicar `unwrap` visual de media anchura
+6. convertir bins a línea de color
+7. desplazar waterfall en `Bitmap`
+8. invalidar render Compose
 
 Decisión práctica de implementación:
 
@@ -463,6 +509,7 @@ Pantalla única MVP:
   - bordes de filtro
 - footer
   - volumen
+  - mute
   - selector de modo
   - bandas
   - acceso simple a memorias si están activadas
@@ -504,6 +551,12 @@ Orden revisado:
 12. reconexión
 13. persistencia opcional y aislada, solo si todo lo anterior es estable
 
+Estado de avance real:
+
+- hitos 1 a 10 ya están cubiertos en una forma usable
+- filtros existen como estado y envío en `tune`, pero falta mejor representación visual
+- reconexión sigue sin ser el foco de esta iteración
+
 # 14. Cambios respecto a v1
 
 - package name actualizado a `es.niceto.ubersdr`
@@ -519,6 +572,34 @@ Orden revisado:
 - no bloquear audio o spectrum por estado local
 - no rediseñar el contrato backend-Android
 - mantener `tune` siempre completo
+
+# 16. Idea futura de gestos avanzados en waterfall
+
+Estado actual válido:
+
+- un dedo cubre bien `hover` de frecuencia
+- un dedo cubre bien `tap-to-tune`
+
+Motivo para no sobrecargar el gesto de un dedo:
+
+- puede entrar en conflicto con el scroll vertical de la pantalla
+- puede degradar la exploración visual del waterfall
+- puede reducir la precisión del tap
+
+Propuesta futura, no implementada todavía:
+
+- un dedo:
+  - `hover` de frecuencia
+  - `tap-to-tune`
+- dos dedos casi verticales:
+  - modo arrastre o `pan` del waterfall
+- dos dedos casi horizontales:
+  - zoom interactivo al separar o acercar
+
+Regla operativa:
+
+- no mezclar estos gestos con el comportamiento actual hasta validarlos por separado
+- priorizar que `hover` y `tap` de un dedo sigan siendo fiables y previsibles
 - mantener dos WebSockets separados
 - no meter rendering sofisticado de waterfall en v1
 - no hacer depender la estabilidad del audio de memorias o settings

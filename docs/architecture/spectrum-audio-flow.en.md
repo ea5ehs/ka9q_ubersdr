@@ -7,7 +7,7 @@ Confirmed (based on repository inspection and Codex-assisted analysis)
 Manual inspection + Codex-assisted exploration
 
 ## Last reviewed
-2026-04-11
+2026-04-15
 
 ---
 
@@ -66,11 +66,19 @@ Function: streamAudio(...)
 
 ### Client
 
-- websocket-manager.js
-- app.js
+Current Android client path:
 
-- decode audio
-- play via AudioContext
+- `AudioWsClient`
+- `AudioPlayer`
+- `OpusDecoder`
+
+Current validated behavior:
+
+- receive binary audio frames from `/ws`
+- parse Opus v2 custom header
+- extract raw Opus payload
+- decode to PCM with the Android-side Opus decoder
+- play PCM through `AudioTrack`
 
 ---
 
@@ -131,6 +139,12 @@ totalBandwidth = binCount * binBandwidth
 low = centerFreq - totalBandwidth / 2  
 high = centerFreq + totalBandwidth / 2
 
+Critical rendering note:
+
+- `binary8` spectrum data can arrive in raw FFT order
+- if the client renders that order directly, signals appear to jump from one side to the other during zoom
+- the current Android client fixes this by applying a half-width unwrap (`fftshift`-style visual reorder) before painting each waterfall row
+
 ---
 
 ## 5. Summary
@@ -141,6 +155,14 @@ radiod → RTP → backend → session → WebSocket → client
 Spectrum:
 radiod → STATUS → backend → session → WebSocket → client
 
+Validated current Android state:
+
+- audio is functional end-to-end
+- spectrum config + `SPEC` reconstruction are functional
+- frequency mapping is coherent for tap, hover, axis and tuned cursor
+- zoom/pan are functional
+- manual tuning with step selection is functional
+
 ---
 
 ## 6. Notes
@@ -148,3 +170,10 @@ radiod → STATUS → backend → session → WebSocket → client
 - Audio and spectrum are independent
 - SSRC links data to sessions
 - FFT comes from radiod
+
+Current limitations:
+
+- CW is only minimally exposed as `CWU`
+- there is no fine CW pitch/offset treatment yet
+- the UI is still technical and not production-polished
+- no visual bandwidth indicator is implemented yet
