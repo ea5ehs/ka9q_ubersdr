@@ -34,24 +34,33 @@ Estado validado actualmente en `android-client`:
 - fix crítico de `unwrap` FFT aplicado en render
 - mapping de frecuencia coherente para tap, hover, cursor y eje
 - zoom, pan y `center tuned` operativos
+- `MAX` directo operativo en una sola acción
+- `MIN` directo operativo con clamp seguro
 - sintonía manual con step operativo
+- frecuencia editable manualmente desde el display
 - volumen y mute visibles y operativos
 - modos disponibles para prueba real: `USB`, `LSB`, `AM`, `CWU`
+- bandas HF cargadas desde `/api/bands` y visibles como grid compacto
+- selección de banda con ajuste real de span a `start/end`
+- regla superior adaptativa con ticks mayores y menores sin forzar extremos
+- barra superior con menú y power
+- menú superior con paleta y telemetría
+- línea rápida actual `MIN - + MAX C`
+- pan con un dedo operativo como drag de sintonía real
+- zoom con pinza descartado por ahora
 
 Limitaciones actuales:
 
 - CW sigue sin tratamiento fino de pitch/offset
 - la UI sigue siendo técnica y no final
-- los controles aún no están optimizados para producción
-- la regla visible de frecuencia sigue simplificada frente al cliente web
 - todavía no existe indicador visual de ancho de banda
 
 Pendientes inmediatos:
 
-- mejorar UI y compactar telemetría cuando convenga
-- añadir indicador visual de ancho de banda
-- aproximar la regla de frecuencia al cliente web
+- mejorar estética hacia una referencia más próxima al cliente web
+- estudiar indicador de sintonía/passband
 - refinar controles de operación continua
+- mantener cambios de bajo impacto local sobre móvil
 
 Prioridad próxima:
 
@@ -514,6 +523,32 @@ Pantalla única MVP:
   - bandas
   - acceso simple a memorias si están activadas
 
+Estado actual validado:
+
+- waterfall como bloque principal superior
+- franja compacta de sintonía bajo el waterfall:
+  - bajar frecuencia
+  - frecuencia principal centrada
+  - modo en la misma línea
+  - subir frecuencia
+  - selector compacto de `step`
+- línea rápida separada con:
+  - `PWR`
+  - `-`
+  - `+`
+  - `MAX`
+  - `C`
+- controles inferiores aún visibles:
+  - modos
+  - volumen
+- grid compacto de bandas HF al pie
+
+Notas funcionales:
+
+- `MAX` aplica zoom máximo válido en una sola acción
+- la selección de banda ajusta primero el span al rango servido por `/api/bands`
+- el layout actual ahorra altura respecto a iteraciones anteriores y prepara espacio para ampliar bandas
+
 # 12. Gestión de errores
 
 Casos y acción:
@@ -619,3 +654,35 @@ Regla operativa:
 - comportamiento de `binary8` en el servidor objetivo
 - fluidez de drag+tune con throttle elegido
 - preset final de filtro para `cwu`
+
+# 17. Bugs corregidos relevantes
+
+- `unwrap` obligatorio del spectrum `binary8` antes de pintar
+- zoom out saturado para no seguir abriendo rango sin límite práctico
+- `MAX` incremental sustituido por una acción directa
+- selección de banda corregida para no dejar el span global previo
+- bug del botón textual `PWR` eliminado de la línea rápida
+- `MIN` corregido para no abrir bordes negativos
+- pan corregido para no bloquearse por referencia fija
+- gesto de pinza retirado por mala usabilidad sobre zoom backend discreto
+
+# 18. Layout actual Android
+
+Estado visual vigente:
+
+- barra superior compacta con `menu` y `power`
+- paleta y telemetría movidas al menú
+- waterfall como bloque principal superior
+- franja de sintonía con frecuencia editable
+- línea rápida `MIN - + MAX C`
+- modos, volumen y bandas siempre visibles
+
+Documento de referencia:
+
+- `android-ui-layout-v1.es.md`
+
+# 19. Dirección inmediata
+
+- mejorar estética sin romper operativa real ya validada
+- estudiar indicador de sintonía/passband
+- mantener iteraciones pequeñas y locales en móvil

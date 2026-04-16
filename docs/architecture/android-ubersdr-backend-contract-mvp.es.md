@@ -20,6 +20,21 @@ No cubre:
 - extensiones
 - controles DSP no confirmados en el protocolo principal
 
+## Estado funcional Android validado
+
+Estado real actualmente validado en móvil:
+
+- audio operativo
+- waterfall operativo
+- selección de bandas desde `GET /api/bands`
+- barra superior con menú y power
+- menú con paleta y telemetría
+- línea rápida `MIN - + MAX C`
+- frecuencia editable manualmente con teclado Android
+- pan con un dedo operativo
+- zoom por botones estable
+- gesto de pinza descartado por ahora
+
 # 2. Flujo de sesión
 
 Orden validado en cliente Android real:
@@ -54,6 +69,16 @@ Notas:
 - [Confirmado] En despliegues detrás de Cloudflare o rate limiting similar, abrir spectrum demasiado rápido tras audio puede provocar `429 Too Many Requests`.
 - [Confirmado] Una espera breve entre audio WS y spectrum WS evita ese `429` en el despliegue actual validado.
 - [Asumido para MVP] Ante error de sesión inválida, regenerar UUID y rehacer el flujo completo.
+
+## Reglas técnicas confirmadas en contrato y cliente
+
+- `totalBandwidth = binCount * binBandwidth`
+- `zoom` pide `binBandwidth` objetivo y el backend puede normalizarlo
+- `pan` no debe enviar `binBandwidth`
+- `MAX` envía una sola acción al máximo zoom válido y deja que el backend normalice el límite efectivo
+- `MIN` debe restaurar la vista más abierta válida con clamp seguro
+- selección de banda debe ajustar también el rango visible
+- el pan funcional actual en Android mueve sintonía real y mantiene la vista coherente
 
 # 3. HTTP endpoints usados en MVP
 
@@ -130,7 +155,12 @@ Notas:
 
 - uso en Android:
   - botones rápidos de banda
-  - posibles rangos por defecto
+  - rango visible real por banda usando `start` y `end`
+  - cálculo del centro de banda con `(start + end) / 2`
+  - aplicación de modo por banda si el backend lo sirve en `mode`
+  - fallback de modo coherente con web si `mode` no existe:
+    - `LSB` por debajo de `10 MHz`
+    - `USB` a partir de `10 MHz`
 
 ## `GET /api/bookmarks`
 
@@ -375,6 +405,10 @@ Reglas confirmadas:
 - `frequency` usa frecuencia absoluta en Hz
 - `binBandwidth` es el ancho de bin objetivo solicitado por el cliente
 - el backend puede normalizar `binBandwidth` y ajustar `binCount`
+- el cliente debe aceptar la `config` resultante como autoridad final
+- `totalBandwidth = binCount * binBandwidth`
+- hacer zoom significa pedir un `binBandwidth` distinto
+- `MAX` debe enviar una sola petición de `zoom` al mínimo `binBandwidth` práctico y dejar que el backend normalice el máximo zoom válido
 
 ### `pan`
 
@@ -644,9 +678,20 @@ Campos mínimos que deben vivir en cliente:
 
 ## Cambio de banda -> tune + posible zoom default
 
-- Android selecciona frecuencia inicial de la banda
-- envía `tune`
-- opcionalmente después `zoom` a un ancho por defecto de banda
+- Android lee `start` y `end` desde `/api/bands`
+- calcula `center = (start + end) / 2`
+- deriva un `binBandwidth` objetivo para mostrar el ancho real de esa banda
+- aplica `zoom` al rango de banda
+- aplica `tune` a `center`
+- aplica `mode` de API si existe
+- si no existe `mode`, usa el mismo fallback que web:
+  - `LSB` por debajo de `10 MHz`
+  - `USB` a partir de `10 MHz`
+
+Regla importante:
+
+- no debe mantenerse el span global previo al pulsar banda
+- la vista no debe quedarse en un rango abierto tipo `0-30 MHz`
 
 ## Memoria -> restaurar frecuencia/modo/filtro
 
@@ -843,6 +888,34 @@ Estado actual del cliente Android spectrum:
 - `zoom` y `pan` reales validados contra backend
 - el backend soporta `zoom`, `pan`, `reset`, `ping` y `get_status`
 - el enfoque de zoom visual local en UI no es la solución correcta
+- `zoom out` satura en el mayor `binBandwidth` observado
+- `MAX` ya no usa una secuencia incremental visible de varios `zoomIn`
+- `MAX` aplica una sola acción directa al máximo zoom válido centrada en la frecuencia actual
+- la selección de banda ya no conserva el span global previo
+
+## Bugs corregidos que afectan al contrato de integración
+
+- `unwrap` visual obligatorio del spectrum antes de pintar waterfall
+- bug del botón textual `PWR` corregido: el power principal está en la barra superior y la línea rápida ahora usa `MIN`
+- bug de `MAX` incremental sustituido por acción directa
+- bug de `MIN` con bordes negativos corregido con clamp de rango válido
+- bug de bandas sin ajustar span corregido usando `start/end` reales de `/api/bands`
+- bug de pan con referencia fija y bloqueo corregido migrando a drag de sintonía real
+- gesto de pinza retirado por mala usabilidad sobre una lógica de zoom backend normalizada/discreta
+
+## Nota operativa sobre zoom discreto real
+
+Aunque Android envía `binBandwidth` como valor continuo, el backend puede discretizarlo y ajustar `binCount`.
+
+En el servidor actual eso ocurre en `user_spectrum_websocket.go`:
+
+- redondeo de `binBandwidth` a escalones seguros
+- reducción/restauración de `binCount` según profundidad de zoom
+
+Conclusión práctica:
+
+- el zoom efectivo no debe tratarse como visualmente continuo
+- por eso el gesto de pinza no se mantiene en el cliente Android actual
 - resultado observado: ya se distinguen señales CW y SSB con cierta facilidad
 
 Todavía no implementado en este estado:

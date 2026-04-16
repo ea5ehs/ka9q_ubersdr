@@ -1,5 +1,6 @@
 package es.niceto.ubersdr.data.websocket
 
+import android.util.Log
 import es.niceto.ubersdr.audio.AudioPlayer
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -15,6 +16,9 @@ class AudioWsClient(
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .build()
 ) {
+    private companion object {
+        const val TAG = "UberSDR-AudioWs"
+    }
 
     interface Listener {
         fun onConnecting()
@@ -24,6 +28,7 @@ class AudioWsClient(
     }
 
     private var webSocket: WebSocket? = null
+    private var audioFrameCount: Long = 0L
 
     fun hasActiveConnection(): Boolean {
         return webSocket != null
@@ -39,6 +44,7 @@ class AudioWsClient(
         listener: Listener
     ) {
         disconnect()
+        audioFrameCount = 0L
 
         listener.onConnecting()
 
@@ -55,26 +61,41 @@ class AudioWsClient(
             .url(wsUrl)
             .build()
 
+        Log.d(
+            TAG,
+            "connect() freq=$frequencyHz mode=$mode low=$bandwidthLowHz high=$bandwidthHighHz"
+        )
+
         webSocket = okHttpClient.newWebSocket(
             request,
             object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: Response) {
+                    Log.d(TAG, "onOpen()")
                     audioPlayer.start()
                     listener.onOpen()
                 }
 
                 override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
+                    audioFrameCount += 1
+                    if (audioFrameCount <= 3L || audioFrameCount % 200L == 0L) {
+                        Log.d(
+                            TAG,
+                            "onMessage() frame=$audioFrameCount bytes=${bytes.size}"
+                        )
+                    }
                     audioPlayer.feedAudio(bytes.toByteArray())
                 }
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                     this@AudioWsClient.webSocket = null
+                    Log.w(TAG, "onFailure(): ${t.message}", t)
                     audioPlayer.stop()
                     listener.onFailure(t.message ?: "unknown websocket failure")
                 }
 
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                     this@AudioWsClient.webSocket = null
+                    Log.d(TAG, "onClosed() code=$code reason=$reason")
                     audioPlayer.stop()
                     listener.onClosed()
                 }
@@ -83,6 +104,7 @@ class AudioWsClient(
     }
 
     fun disconnect() {
+        Log.d(TAG, "disconnect()")
         webSocket?.close(1000, "client disconnect")
         webSocket = null
         audioPlayer.stop()
@@ -101,10 +123,12 @@ class AudioWsClient(
     }
 
     fun setVolume(volume: Float) {
+        Log.d(TAG, "setVolume() volume=$volume")
         audioPlayer.setVolume(volume)
     }
 
     fun setMuted(muted: Boolean) {
+        Log.d(TAG, "setMuted() muted=$muted")
         audioPlayer.setMuted(muted)
     }
 

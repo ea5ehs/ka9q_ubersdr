@@ -3,7 +3,6 @@ package es.niceto.ubersdr.app
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -12,6 +11,7 @@ import es.niceto.ubersdr.data.network.ConnectionService
 import es.niceto.ubersdr.presentation.radio.RadioViewModel
 import es.niceto.ubersdr.session.SessionRepository
 import es.niceto.ubersdr.ui.radio.RadioScreen
+import es.niceto.ubersdr.ui.theme.UberSdrTheme
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 
@@ -34,7 +34,7 @@ class MainActivity : ComponentActivity() {
         val viewModel = RadioViewModel(sessionRepository)
 
         setContent {
-            MaterialTheme {
+            UberSdrTheme {
                 Surface {
                     RadioScreen(viewModel = viewModel)
                 }

@@ -23,7 +23,6 @@
         android:extractNativeLibs="false"
         android:label="UberSDR"
         android:supportsRtl="true"
-        android:testOnly="true"
         android:theme="@style/Theme.UberSDR" >
         <activity
             android:name="es.niceto.ubersdr.app.MainActivity"

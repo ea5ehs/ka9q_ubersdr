@@ -4,91 +4,104 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.background
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
-import es.niceto.ubersdr.model.RadioMode
 
 @Composable
 fun RadioControls(
-    onConnect: () -> Unit,
-    currentMode: RadioMode,
-    onModeSelected: (RadioMode) -> Unit,
     audioVolume: Float,
     audioMuted: Boolean,
     onAudioVolumeChanged: (Float) -> Unit,
     onToggleMute: () -> Unit,
-    showConnectButton: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        if (showConnectButton) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                Button(onClick = onConnect) {
-                    Text("Connect")
-                }
-            }
-        }
-
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(40.dp)
+                .background(Color(0xFF121922))
+                .padding(horizontal = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            listOf(
-                RadioMode.USB to "USB",
-                RadioMode.LSB to "LSB",
-                RadioMode.AM to "AM",
-                RadioMode.CWU to "CWU"
-            ).forEach { (mode, label) ->
-                val active = currentMode == mode
-                Button(
-                    onClick = { onModeSelected(mode) },
-                    colors = if (active) {
-                        ButtonDefaults.buttonColors()
+            IconButton(
+                onClick = onToggleMute,
+                modifier = Modifier.size(35.dp)
+            ) {
+                Icon(
+                    imageVector = SpeakerIcon,
+                    contentDescription = if (audioMuted) "Muted" else "Volume",
+                    modifier = Modifier.size(25.dp),
+                    tint = if (audioMuted) {
+                        Color(0xFFE35B5B)
                     } else {
-                        ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Color(0xFF5EDC6A)
                     }
-                ) {
-                    Text(label)
-                }
-            }
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Button(onClick = onToggleMute) {
-                Text(if (audioMuted) "Unmute" else "Mute")
-            }
-
-            Column(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = "Volume ${(audioVolume * 100).toInt()}%",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Slider(
-                    value = audioVolume,
-                    onValueChange = onAudioVolumeChanged,
-                    valueRange = 0f..1f
                 )
             }
+
+            Slider(
+                value = audioVolume,
+                onValueChange = onAudioVolumeChanged,
+                valueRange = 0f..1f,
+                modifier = Modifier
+                    .fillMaxWidth(0.72f)
+                    .height(25.dp)
+                    .graphicsLayer(scaleY = 0.6f)
+            )
+
+            Text(
+                text = "${(audioVolume * 100).toInt()}%",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFFB8C4CF),
+                modifier = Modifier.width(50.dp)
+            )
         }
     }
 }
+
+private val SpeakerIcon: ImageVector =
+    ImageVector.Builder(
+        name = "SpeakerIcon",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        path(fill = androidx.compose.ui.graphics.SolidColor(Color.White)) {
+            moveTo(3f, 10f)
+            lineTo(7f, 10f)
+            lineTo(12f, 6f)
+            lineTo(12f, 18f)
+            lineTo(7f, 14f)
+            lineTo(3f, 14f)
+            close()
+            moveTo(15f, 9f)
+            lineTo(15f, 15f)
+            lineTo(16.5f, 15f)
+            curveTo(18.4f, 15f, 20f, 13.4f, 20f, 11.5f)
+            curveTo(20f, 9.6f, 18.4f, 8f, 16.5f, 8f)
+            lineTo(15f, 8f)
+            close()
+        }
+    }.build()

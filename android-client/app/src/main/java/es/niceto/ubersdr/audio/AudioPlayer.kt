@@ -4,31 +4,41 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
+import android.util.Log
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 class AudioPlayer(
     private val opusDecoder: OpusDecoder = OpusDecoder()
 ) {
+    private companion object {
+        const val TAG = "UberSDR-AudioPlayer"
+        const val OPUS_V2_HEADER_SIZE = 21
+    }
+
     private var audioTrack: AudioTrack? = null
     private var currentSampleRate: Int? = null
     private var currentChannels: Int? = null
     private var started = false
     private var volume = 1f
     private var muted = false
+    private var writtenFrameCount = 0L
 
     fun start() {
         started = true
+        Log.d(TAG, "start() muted=$muted volume=$volume")
         applyVolume()
     }
 
     fun stop() {
         started = false
+        Log.d(TAG, "stop()")
         audioTrack?.stop()
         audioTrack?.release()
         audioTrack = null
         currentSampleRate = null
         currentChannels = null
+        writtenFrameCount = 0L
     }
 
     fun feedAudio(packet: ByteArray) {
@@ -57,20 +67,30 @@ class AudioPlayer(
         )
 
         if (pcm.isEmpty()) {
+            Log.d(TAG, "feedAudio() decode returned empty pcm")
             return
         }
 
         ensureAudioTrack(sampleRate = sampleRate, channels = channels)
-        audioTrack?.write(pcm, 0, pcm.size, AudioTrack.WRITE_BLOCKING)
+        val written = audioTrack?.write(pcm, 0, pcm.size, AudioTrack.WRITE_BLOCKING) ?: 0
+        writtenFrameCount += 1
+        if (writtenFrameCount <= 3L || writtenFrameCount % 200L == 0L) {
+            Log.d(
+                TAG,
+                "feedAudio() frame=$writtenFrameCount sampleRate=$sampleRate channels=$channels pcm=${pcm.size} written=$written"
+            )
+        }
     }
 
     fun setVolume(volume: Float) {
         this.volume = volume.coerceIn(0f, 1f)
+        Log.d(TAG, "setVolume() applied=$volume coerced=${this.volume}")
         applyVolume()
     }
 
     fun setMuted(muted: Boolean) {
         this.muted = muted
+        Log.d(TAG, "setMuted() muted=$muted")
         applyVolume()
     }
 
@@ -113,6 +133,7 @@ class AudioPlayer(
         ).also {
             currentSampleRate = sampleRate
             currentChannels = channels
+            Log.d(TAG, "ensureAudioTrack() created sampleRate=$sampleRate channels=$channels")
             applyVolume(it)
             it.play()
         }
@@ -124,9 +145,5 @@ class AudioPlayer(
 
     private fun applyVolume(track: AudioTrack?) {
         track?.setVolume(if (muted) 0f else volume)
-    }
-
-    private companion object {
-        const val OPUS_V2_HEADER_SIZE = 21
     }
 }

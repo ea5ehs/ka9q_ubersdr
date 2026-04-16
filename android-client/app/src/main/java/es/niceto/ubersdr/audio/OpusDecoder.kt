@@ -1,9 +1,14 @@
 package es.niceto.ubersdr.audio
 
+import android.util.Log
 import io.github.jaredmdobson.concentus.OpusDecoder as ConcentusOpusDecoder
 import io.github.jaredmdobson.concentus.OpusException
 
 class OpusDecoder {
+    private companion object {
+        const val TAG = "UberSDR-OpusDecoder"
+    }
+
     private var decoder: ConcentusOpusDecoder? = null
     private var currentSampleRate: Int? = null
     private var currentChannels: Int? = null
@@ -37,11 +42,13 @@ class OpusDecoder {
             )
 
             if (decodedSamplesPerChannel <= 0) {
+                Log.d(TAG, "decode() decodedSamplesPerChannel=$decodedSamplesPerChannel")
                 ShortArray(0)
             } else {
                 pcmBuffer.copyOf(decodedSamplesPerChannel * channels)
             }
-        } catch (_: OpusException) {
+        } catch (e: OpusException) {
+            Log.w(TAG, "decode() failed: ${e.message}")
             ShortArray(0)
         }
     }
@@ -61,11 +68,13 @@ class OpusDecoder {
 
         return try {
             ConcentusOpusDecoder(sampleRate, channels).also { newDecoder ->
+                Log.d(TAG, "getOrCreateDecoder() new decoder sampleRate=$sampleRate channels=$channels")
                 decoder = newDecoder
                 currentSampleRate = sampleRate
                 currentChannels = channels
             }
-        } catch (_: OpusException) {
+        } catch (e: OpusException) {
+            Log.w(TAG, "getOrCreateDecoder() failed: ${e.message}")
             null
         }
     }

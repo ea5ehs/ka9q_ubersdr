@@ -1,12 +1,17 @@
 package es.niceto.ubersdr.ui.radio
 
 import android.graphics.Bitmap
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -23,7 +28,13 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RangeSlider
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -35,13 +46,26 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import es.niceto.ubersdr.model.RadioMode
 import es.niceto.ubersdr.presentation.radio.RadioViewModel
 import java.text.NumberFormat
@@ -54,17 +78,24 @@ fun RadioScreen(
     viewModel: RadioViewModel,
     modifier: Modifier = Modifier
 ) {
+    val minValidFrequencyHz = 10_000L
+    val maxValidFrequencyHz = 30_000_000L
     val tuningStepsHz = listOf(10L, 100L, 1_000L, 5_000L, 10_000L)
-    val waterfallPalette = WaterfallPalette.Jet
+    var waterfallPalette by remember { mutableStateOf(WaterfallPalette.Jet) }
     val bandButtonOrder = listOf("160", "80", "60", "40", "30", "20", "17", "15", "12", "10")
     var tuningStepHz by remember { mutableStateOf(1_000L) }
     var waterfallVisible by remember { mutableStateOf(true) }
-    var telemetryExpanded by remember { mutableStateOf(false) }
+    var topMenuExpanded by remember { mutableStateOf(false) }
     var tuningStepMenuExpanded by remember { mutableStateOf(false) }
     val uiState by viewModel.uiState.collectAsState()
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val frequencyFocusRequester = remember { FocusRequester() }
     var waterfallBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var tappedFrequencyHz by remember { mutableStateOf<Long?>(null) }
     var hoverFrequencyHz by remember { mutableStateOf<Long?>(null) }
+    var editingFrequency by remember { mutableStateOf(false) }
+    var editingFrequencyText by remember { mutableStateOf(uiState.frequencyHz.toString()) }
     val centerFreq = uiState.spectrumCenterFreqHz
     val totalBandwidthHz = uiState.spectrumTotalBandwidthHz
     val spectrumStartFreq = if (centerFreq != null && totalBandwidthHz != null && totalBandwidthHz > 0.0) {
@@ -90,7 +121,53 @@ fun RadioScreen(
     } else {
         null
     }
+    val visualPassbandLowOffsetHz: Int
+    val visualPassbandHighOffsetHz: Int
+    val isCwMode = uiState.mode.wireValue.startsWith("cw")
+    val isSsbMode = uiState.mode == RadioMode.USB || uiState.mode == RadioMode.LSB
+    val useDashedPassbandLimitsOnly = isCwMode ||
+        uiState.mode == RadioMode.USB ||
+        uiState.mode == RadioMode.LSB
+    if (isCwMode) {
+        val passbandWidthHz = kotlin.math.abs(uiState.bandwidthHighHz - uiState.bandwidthLowHz)
+        val halfPassbandWidthHz = passbandWidthHz / 2
+        visualPassbandLowOffsetHz = -halfPassbandWidthHz
+        visualPassbandHighOffsetHz = halfPassbandWidthHz
+    } else {
+        visualPassbandLowOffsetHz = uiState.bandwidthLowHz
+        visualPassbandHighOffsetHz = uiState.bandwidthHighHz
+    }
+    val passbandLowFrequencyHz = uiState.frequencyHz + visualPassbandLowOffsetHz
+    val passbandHighFrequencyHz = uiState.frequencyHz + visualPassbandHighOffsetHz
+    val passbandStartFrequencyHz = minOf(passbandLowFrequencyHz, passbandHighFrequencyHz).toDouble()
+    val passbandEndFrequencyHz = maxOf(passbandLowFrequencyHz, passbandHighFrequencyHz).toDouble()
+    val passbandStartRatio = if (spectrumStartFreq != null && spectrumEndFreq != null) {
+        ((passbandStartFrequencyHz - spectrumStartFreq) / (spectrumEndFreq - spectrumStartFreq))
+            .coerceIn(0.0, 1.0)
+    } else {
+        null
+    }
+    val passbandEndRatio = if (spectrumStartFreq != null && spectrumEndFreq != null) {
+        ((passbandEndFrequencyHz - spectrumStartFreq) / (spectrumEndFreq - spectrumStartFreq))
+            .coerceIn(0.0, 1.0)
+    } else {
+        null
+    }
+    val passbandVisible = passbandStartRatio != null &&
+        passbandEndRatio != null &&
+        passbandEndFrequencyHz > (spectrumStartFreq ?: Double.POSITIVE_INFINITY) &&
+        passbandStartFrequencyHz < (spectrumEndFreq ?: Double.NEGATIVE_INFINITY)
+    val ssbPassbandRange = when (uiState.mode) {
+        RadioMode.USB -> uiState.bandwidthLowHz.coerceIn(0, 4000).toFloat()..
+            uiState.bandwidthHighHz.coerceIn(0, 4000).toFloat()
+        RadioMode.LSB -> kotlin.math.abs(uiState.bandwidthHighHz).coerceIn(0, 4000).toFloat()..
+            kotlin.math.abs(uiState.bandwidthLowHz).coerceIn(0, 4000).toFloat()
+        else -> 150f..2700f
+    }
+    val cwWidthHz = kotlin.math.abs(uiState.bandwidthHighHz - uiState.bandwidthLowHz)
+        .coerceIn(100, 1000)
     val selectedFrequencyText = NumberFormat.getNumberInstance(Locale.US).format(uiState.frequencyHz)
+    var currentDragFrequencyHz by remember { mutableStateOf<Long?>(null) }
     val compactHeader = buildString {
         append("${uiState.frequencyHz} Hz")
         append(" | ")
@@ -110,6 +187,33 @@ fun RadioScreen(
     val bandButtons = bandButtonOrder.mapNotNull { shortLabel ->
         uiState.availableBands.firstOrNull { it.label == "${shortLabel}m" }?.let { band ->
             shortLabel to band
+        }
+    }
+    val applyEditedFrequency = {
+        val parsedFrequencyHz = editingFrequencyText
+            .filter { it.isDigit() }
+            .takeIf { it.isNotBlank() }
+            ?.toLongOrNull()
+
+        if (parsedFrequencyHz != null) {
+            viewModel.tune(parsedFrequencyHz.coerceIn(minValidFrequencyHz, maxValidFrequencyHz))
+            editingFrequency = false
+            keyboardController?.hide()
+            focusManager.clearFocus()
+        }
+    }
+
+    LaunchedEffect(uiState.frequencyHz, editingFrequency) {
+        if (!editingFrequency) {
+            editingFrequencyText = uiState.frequencyHz.toString()
+        }
+    }
+
+    LaunchedEffect(editingFrequency) {
+        if (editingFrequency) {
+            editingFrequencyText = uiState.frequencyHz.toString()
+            frequencyFocusRequester.requestFocus()
+            keyboardController?.show()
         }
     }
 
@@ -179,32 +283,85 @@ fun RadioScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(32.dp)
+                .background(Color(0xFF18222D))
+                .padding(horizontal = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = if (telemetryExpanded) "Hide debug" else "Show debug",
-                modifier = Modifier.clickable { telemetryExpanded = !telemetryExpanded },
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
+            Box {
+                IconButton(
+                    onClick = { topMenuExpanded = true },
+                    modifier = Modifier.height(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Menu,
+                        contentDescription = "Menu",
+                        tint = Color.White.copy(alpha = 0.92f)
+                    )
+                }
 
-        if (telemetryExpanded) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                DropdownMenu(
+                    expanded = topMenuExpanded,
+                    onDismissRequest = { topMenuExpanded = false }
+                ) {
+                    Text(
+                        text = "Waterfall",
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    WaterfallPalette.values().forEach { palette ->
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = palette.label + if (palette == waterfallPalette) " \u2713" else ""
+                                )
+                            },
+                            onClick = {
+                                waterfallPalette = palette
+                                topMenuExpanded = false
+                            }
+                        )
+                    }
+                    Text(
+                        text = "Telemetria",
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    Text(
+                        text = compactHeader,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        text = "Selected: $selectedFrequencyText Hz | Tapped: ${tappedFrequencyHz ?: "-"} | Hover: ${hoverFrequencyHz ?: "-"}",
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        text = "Filter: ${uiState.bandwidthLowHz}/${uiState.bandwidthHighHz} Hz | Step: $tuningStepLabel | dC: ${audioMinusSpectrumCenterHz ?: "-"} Hz | Status: $shortStatus",
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        text = "Mas opciones proximamente",
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+
+            IconButton(
+                onClick = viewModel::togglePower,
+                modifier = Modifier.height(35.dp)
             ) {
-                Text(
-                    text = compactHeader,
-                    style = MaterialTheme.typography.bodySmall
-                )
-                Text(
-                    text = "Selected: $selectedFrequencyText Hz | Tapped: ${tappedFrequencyHz ?: "-"} | Hover: ${hoverFrequencyHz ?: "-"}",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Text(
-                    text = "Filter: ${uiState.bandwidthLowHz}/${uiState.bandwidthHighHz} Hz | Step: $tuningStepLabel | dC: ${audioMinusSpectrumCenterHz ?: "-"} Hz | Status: $shortStatus",
-                    style = MaterialTheme.typography.bodySmall
+                Icon(
+                    imageVector = PowerIcon,
+                    contentDescription = "Power",
+                    modifier = Modifier.height(25.dp),
+                    tint = if (uiState.isConnected) Color(0xFF5EDC6A) else Color(0xFFE35B5B)
                 )
             }
         }
@@ -217,132 +374,141 @@ fun RadioScreen(
                     .background(Color(0xFF102030)),
                 contentAlignment = Alignment.Center
             ) {
-                val bitmap = waterfallBitmap
-                if (bitmap != null) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clipToBounds()
-                    ) {
-                        Image(
-                            bitmap = bitmap.asImageBitmap(),
-                            contentDescription = "Waterfall",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.FillBounds
-                        )
+                    val bitmap = waterfallBitmap
+                    if (bitmap != null) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clipToBounds()
+                        ) {
+                            Image(
+                                bitmap = bitmap.asImageBitmap(),
+                                contentDescription = "Waterfall",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.FillBounds
+                            )
+                        }
+                    } else {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = "UberSDR Android App v0.4",
+                                color = Color.White,
+                                style = MaterialTheme.typography.titleMedium,
+                                textAlign = TextAlign.Center
+                            )
+                            Text(
+                                text = "Niceto Muñoz (EA5ZL) · 2026",
+                                color = Color.White.copy(alpha = 0.72f),
+                                style = MaterialTheme.typography.bodySmall,
+                                textAlign = TextAlign.Center
+                            )
+                        }
                     }
-                } else {
-                    Text(
-                        text = "Waterfall placeholder",
-                        color = Color.White
-                    )
-                }
 
-                if (isValidAxisRange(spectrumStartFreq, spectrumEndFreq)) {
-                    val axisStartFreq = spectrumStartFreq!!
-                    val axisEndFreq = spectrumEndFreq!!
-                    val axisVisibleRange = axisEndFreq - axisStartFreq
-                    BoxWithConstraints(
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .fillMaxWidth()
-                            .height(28.dp)
-                            .background(Color(0x66102030))
-                            .clipToBounds()
-                    ) {
-                        val axisWidthDp = maxWidth.value
-                        if (axisWidthDp > 0f && axisWidthDp.isFinite()) {
-                            val visibleRangeHz = axisVisibleRange.roundToLong().coerceAtLeast(1L)
-                            val majorTickStepHz = selectAxisMajorTickStepHz(
-                                visibleRangeHz = visibleRangeHz,
-                                availableWidthDp = axisWidthDp
-                            )
-                            val minorTickStepHz = selectAxisMinorTickStepHz(majorTickStepHz)
-                            val axisTicks = buildAxisTicks(
-                                startHz = axisStartFreq,
-                                endHz = axisEndFreq,
-                                majorTickStepHz = majorTickStepHz,
-                                minorTickStepHz = minorTickStepHz
-                            )
-                            val displayTicks = axisTicks
-                            val labelWidth = 64.dp
-                            val labelTopOffset = 10.dp
-                            val labeledTicks = buildList {
-                                var previousRightDp = (-labelWidth).value
+                    if (isValidAxisRange(spectrumStartFreq, spectrumEndFreq)) {
+                        val axisStartFreq = spectrumStartFreq!!
+                        val axisEndFreq = spectrumEndFreq!!
+                        val axisVisibleRange = axisEndFreq - axisStartFreq
+                        BoxWithConstraints(
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .fillMaxWidth()
+                                .height(28.dp)
+                                .background(Color(0x66102030))
+                                .clipToBounds()
+                        ) {
+                            val axisWidthDp = maxWidth.value
+                            if (axisWidthDp > 0f && axisWidthDp.isFinite()) {
+                                val visibleRangeHz = axisVisibleRange.roundToLong().coerceAtLeast(1L)
+                                val majorTickStepHz = selectAxisMajorTickStepHz(
+                                    visibleRangeHz = visibleRangeHz,
+                                    availableWidthDp = axisWidthDp
+                                )
+                                val minorTickStepHz = selectAxisMinorTickStepHz(majorTickStepHz)
+                                val axisTicks = buildAxisTicks(
+                                    startHz = axisStartFreq,
+                                    endHz = axisEndFreq,
+                                    majorTickStepHz = majorTickStepHz,
+                                    minorTickStepHz = minorTickStepHz
+                                )
+                                val displayTicks = axisTicks
+                                val labelWidth = 64.dp
+                                val labelTopOffset = 10.dp
+                                val labeledTicks = buildList {
+                                    var previousRightDp = (-labelWidth).value
 
-                                displayTicks.forEach { tick ->
-                                    if (!tick.isMajor) {
-                                        return@forEach
-                                    }
+                                    displayTicks.forEach { tick ->
+                                        if (!tick.isMajor) {
+                                            return@forEach
+                                        }
 
-                                    val ratio = ((tick.frequencyHz - axisStartFreq) / axisVisibleRange).toFloat()
-                                    val tickOffset = axisWidthDp * ratio.coerceIn(0f, 1f)
-                                    val labelLeftDp = (tickOffset - (labelWidth.value / 2f)).coerceIn(0f, axisWidthDp - labelWidth.value)
-                                    val labelRightDp = labelLeftDp + labelWidth.value
+                                        val ratio = ((tick.frequencyHz - axisStartFreq) / axisVisibleRange).toFloat()
+                                        val tickOffset = axisWidthDp * ratio.coerceIn(0f, 1f)
+                                        val labelLeftDp =
+                                            (tickOffset - (labelWidth.value / 2f)).coerceIn(0f, axisWidthDp - labelWidth.value)
+                                        val labelRightDp = labelLeftDp + labelWidth.value
 
-                                    if (labelLeftDp >= previousRightDp + 4f) {
-                                        add(tick.frequencyHz)
-                                        previousRightDp = labelRightDp
+                                        if (labelLeftDp >= previousRightDp + 4f) {
+                                            add(tick.frequencyHz)
+                                            previousRightDp = labelRightDp
+                                        }
                                     }
                                 }
-                            }
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.TopStart)
-                                    .fillMaxWidth()
-                                    .height(1.dp)
-                                    .background(Color.White.copy(alpha = 0.70f))
-                            )
-
-                            displayTicks.forEach { tick ->
-                                val ratio = ((tick.frequencyHz - axisStartFreq) / axisVisibleRange).toFloat()
-                                val tickOffset = maxWidth * ratio.coerceIn(0f, 1f)
-                                val centeredLabelOffset = tickOffset - (labelWidth / 2)
-                                val labelOffset = when {
-                                    centeredLabelOffset < 0.dp -> 0.dp
-                                    centeredLabelOffset > maxWidth - labelWidth -> maxWidth - labelWidth
-                                    else -> centeredLabelOffset
-                                }
-                                val shouldShowLabel = tick.isMajor && labeledTicks.contains(tick.frequencyHz)
-
                                 Box(
                                     modifier = Modifier
                                         .align(Alignment.TopStart)
-                                        .offset(x = tickOffset - (1.dp / 2))
-                                        .width(1.dp)
-                                        .height(if (tick.isMajor) 9.dp else 5.dp)
-                                        .background(Color.White.copy(alpha = if (tick.isMajor) 0.85f else 0.55f))
+                                        .fillMaxWidth()
+                                        .height(1.dp)
+                                        .background(Color.White.copy(alpha = 0.70f))
                                 )
 
-                                if (shouldShowLabel) {
-                                    Text(
-                                        text = formatAxisTickLabel(
-                                            frequencyHz = tick.frequencyHz,
-                                            majorTickStepHz = majorTickStepHz
-                                        ),
+                                displayTicks.forEach { tick ->
+                                    val ratio = ((tick.frequencyHz - axisStartFreq) / axisVisibleRange).toFloat()
+                                    val tickOffset = maxWidth * ratio.coerceIn(0f, 1f)
+                                    val centeredLabelOffset = tickOffset - (labelWidth / 2)
+                                    val labelOffset = when {
+                                        centeredLabelOffset < 0.dp -> 0.dp
+                                        centeredLabelOffset > maxWidth - labelWidth -> maxWidth - labelWidth
+                                        else -> centeredLabelOffset
+                                    }
+                                    val shouldShowLabel = tick.isMajor && labeledTicks.contains(tick.frequencyHz)
+
+                                    Box(
                                         modifier = Modifier
                                             .align(Alignment.TopStart)
-                                            .offset(x = labelOffset)
-                                            .offset(y = labelTopOffset)
-                                            .width(labelWidth),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = Color.White,
-                                        textAlign = TextAlign.Center,
-                                        maxLines = 1,
-                                        softWrap = false,
-                                        overflow = TextOverflow.Clip
+                                            .offset(x = tickOffset - (1.dp / 2))
+                                            .width(1.dp)
+                                            .height(if (tick.isMajor) 9.dp else 5.dp)
+                                            .background(Color.White.copy(alpha = if (tick.isMajor) 0.85f else 0.55f))
                                     )
+
+                                    if (shouldShowLabel) {
+                                        Text(
+                                            text = formatAxisTickLabel(
+                                                frequencyHz = tick.frequencyHz,
+                                                majorTickStepHz = majorTickStepHz
+                                            ),
+                                            modifier = Modifier
+                                                .align(Alignment.TopStart)
+                                                .offset(x = labelOffset)
+                                                .offset(y = labelTopOffset)
+                                                .width(labelWidth),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Color.White,
+                                            textAlign = TextAlign.Center,
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            overflow = TextOverflow.Clip
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .fillMaxSize()
-                ) {
                     Box(
                         modifier = Modifier
                             .align(Alignment.Center)
@@ -356,83 +522,176 @@ fun RadioScreen(
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.Center)
-                                    .fillMaxHeight()
-                                    .width(1.dp)
-                                    .background(Color.White.copy(alpha = 0.45f))
-                            )
+                                    .fillMaxSize()
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.Center)
+                                        .fillMaxHeight()
+                                        .width(1.dp)
+                                        .background(Color.White.copy(alpha = 0.45f))
+                                )
+                            }
                         }
                     }
-                }
 
-                if (tunedFrequencyRatio != null) {
-                    BoxWithConstraints(
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .fillMaxSize()
-                            .pointerInput(spectrumStartFreq, spectrumEndFreq) {
-                                awaitEachGesture {
-                                    val start = spectrumStartFreq ?: return@awaitEachGesture
-                                    val end = spectrumEndFreq ?: return@awaitEachGesture
-                                    val widthPx = size.width.toFloat()
-                                    if (widthPx <= 0f) {
-                                        return@awaitEachGesture
-                                    }
+                    if (tunedFrequencyRatio != null) {
+                        BoxWithConstraints(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .fillMaxSize()
+                                .pointerInput(Unit) {
+                                    detectHorizontalDragGestures(
+                                        onDragStart = { offset: Offset ->
+                                            val start = spectrumStartFreq ?: return@detectHorizontalDragGestures
+                                            val end = spectrumEndFreq ?: return@detectHorizontalDragGestures
+                                            val widthPx = size.width.toFloat()
+                                            if (widthPx <= 0f) {
+                                                return@detectHorizontalDragGestures
+                                            }
 
-                                    val down = awaitFirstDown(requireUnconsumed = false)
-                                    hoverFrequencyHz =
-                                        (start + (down.position.x / widthPx).coerceIn(0f, 1f) * (end - start)).toLong()
-
-                                    do {
-                                        val event = awaitPointerEvent()
-                                        val change = event.changes.firstOrNull { it.id == down.id }
-                                        if (change != null && change.pressed) {
                                             hoverFrequencyHz =
-                                                (start + (change.position.x / widthPx).coerceIn(0f, 1f) * (end - start)).toLong()
-                                        }
-                                    } while (change != null && change.pressed)
+                                                (start + (offset.x / widthPx).coerceIn(0f, 1f) * (end - start)).toLong()
+                                            currentDragFrequencyHz = uiState.frequencyHz
+                                        },
+                                        onHorizontalDrag = { _, dragAmount ->
+                                            val visibleFrequencyHz = currentDragFrequencyHz ?: uiState.frequencyHz
+                                            val visibleBandwidthHz = totalBandwidthHz ?: return@detectHorizontalDragGestures
+                                            val widthPx = size.width.toFloat()
+                                            if (widthPx <= 0f || !visibleBandwidthHz.isFinite() || visibleBandwidthHz <= 0.0) {
+                                                return@detectHorizontalDragGestures
+                                            }
 
-                                    hoverFrequencyHz = null
+                                            val deltaHz = ((dragAmount / widthPx) * visibleBandwidthHz).roundToLong() * -1L
+                                            if (deltaHz == 0L) {
+                                                return@detectHorizontalDragGestures
+                                            }
+
+                                            val nextFrequencyHz = visibleFrequencyHz + deltaHz
+                                            currentDragFrequencyHz = viewModel.dragTuneSpectrumTo(nextFrequencyHz)
+                                        },
+                                        onDragEnd = {
+                                            hoverFrequencyHz = null
+                                            currentDragFrequencyHz = null
+                                        },
+                                        onDragCancel = {
+                                            hoverFrequencyHz = null
+                                            currentDragFrequencyHz = null
+                                        }
+                                    )
                                 }
-                            }
-                            .pointerInput(spectrumStartFreq, spectrumEndFreq) {
-                                detectTapGestures { offset ->
-                                    val start = spectrumStartFreq ?: return@detectTapGestures
-                                    val end = spectrumEndFreq ?: return@detectTapGestures
-                                    val widthPx = size.width.toFloat()
-                                    if (widthPx <= 0f) {
-                                        return@detectTapGestures
+                                .pointerInput(spectrumStartFreq, spectrumEndFreq) {
+                                    detectTapGestures { offset ->
+                                        val start = spectrumStartFreq ?: return@detectTapGestures
+                                        val end = spectrumEndFreq ?: return@detectTapGestures
+                                        val widthPx = size.width.toFloat()
+                                        if (widthPx <= 0f) {
+                                            return@detectTapGestures
+                                        }
+
+                                        val ratio = (offset.x / widthPx).coerceIn(0f, 1f)
+                                        val tappedHz = (start + ratio * (end - start)).toLong()
+                                        tappedFrequencyHz = tappedHz
+                                        viewModel.tune(tappedHz)
+                                    }
+                                }
+                        ) {
+                            if (passbandVisible) {
+                                val passbandStartOffset = maxWidth * passbandStartRatio!!.toFloat()
+                                val passbandEndOffset = maxWidth * passbandEndRatio!!.toFloat()
+                                val passbandWidth = (passbandEndOffset - passbandStartOffset).coerceAtLeast(2.dp)
+
+                                if (!useDashedPassbandLimitsOnly) {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopStart)
+                                            .offset(x = passbandStartOffset)
+                                            .fillMaxHeight()
+                                            .width(passbandWidth)
+                                            .background(Color(0x5558B8FF))
+                                    )
+                                }
+
+                                if (useDashedPassbandLimitsOnly) {
+                                    Canvas(
+                                        modifier = Modifier
+                                            .align(Alignment.TopStart)
+                                            .offset(x = passbandStartOffset - (1.dp / 2))
+                                            .fillMaxHeight()
+                                            .width(1.dp)
+                                    ) {
+                                        drawLine(
+                                            color = Color(0xAA9FD8FF),
+                                            start = Offset(x = size.width / 2f, y = 0f),
+                                            end = Offset(x = size.width / 2f, y = size.height),
+                                            strokeWidth = size.width,
+                                            pathEffect = PathEffect.dashPathEffect(
+                                                intervals = floatArrayOf(8f, 8f)
+                                            )
+                                        )
                                     }
 
-                                    val ratio = (offset.x / widthPx).coerceIn(0f, 1f)
-                                    val tappedHz = (start + ratio * (end - start)).toLong()
-                                    tappedFrequencyHz = tappedHz
-                                    viewModel.tune(tappedHz)
+                                    Canvas(
+                                        modifier = Modifier
+                                            .align(Alignment.TopStart)
+                                            .offset(x = passbandEndOffset - (1.dp / 2))
+                                            .fillMaxHeight()
+                                            .width(1.dp)
+                                    ) {
+                                        drawLine(
+                                            color = Color(0xAA9FD8FF),
+                                            start = Offset(x = size.width / 2f, y = 0f),
+                                            end = Offset(x = size.width / 2f, y = size.height),
+                                            strokeWidth = size.width,
+                                            pathEffect = PathEffect.dashPathEffect(
+                                                intervals = floatArrayOf(8f, 8f)
+                                            )
+                                        )
+                                    }
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopStart)
+                                            .offset(x = passbandStartOffset - (1.dp / 2))
+                                            .fillMaxHeight()
+                                            .width(1.dp)
+                                            .background(Color(0xAA9FD8FF))
+                                    )
+
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopStart)
+                                            .offset(x = passbandEndOffset - (1.dp / 2))
+                                            .fillMaxHeight()
+                                            .width(1.dp)
+                                            .background(Color(0xAA9FD8FF))
+                                    )
                                 }
                             }
-                    ) {
-                        if (hoverFrequencyRatio != null) {
-                            val hoverOffset = maxWidth * hoverFrequencyRatio.toFloat()
+
+                            if (hoverFrequencyRatio != null) {
+                                val hoverOffset = maxWidth * hoverFrequencyRatio.toFloat()
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopStart)
+                                        .offset(x = hoverOffset - (1.dp / 2))
+                                        .fillMaxHeight()
+                                        .width(1.dp)
+                                        .background(Color(0x66B8E1FF))
+                                )
+                            }
+
+                            val cursorOffset = maxWidth * tunedFrequencyRatio.toFloat()
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.TopStart)
-                                    .offset(x = hoverOffset - (1.dp / 2))
+                                    .offset(x = cursorOffset - (1.dp / 2))
                                     .fillMaxHeight()
                                     .width(1.dp)
-                                    .background(Color(0x66B8E1FF))
+                                    .background(Color(0xCCFF6B6B))
                             )
                         }
-
-                        val cursorOffset = maxWidth * tunedFrequencyRatio.toFloat()
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.TopStart)
-                                .offset(x = cursorOffset - (1.dp / 2))
-                                .fillMaxHeight()
-                                .width(1.dp)
-                                .background(Color(0xCCFF6B6B))
-                        )
                     }
-                }
             }
 
             Row(
@@ -457,15 +716,44 @@ fun RadioScreen(
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = selectedFrequencyText,
-                            style = MaterialTheme.typography.headlineSmall,
-                            color = Color.White,
-                            textAlign = TextAlign.Center,
-                            maxLines = 1,
-                            softWrap = false,
-                            overflow = TextOverflow.Clip
-                        )
+                        if (editingFrequency) {
+                            BasicTextField(
+                                value = editingFrequencyText,
+                                onValueChange = { updatedValue ->
+                                    editingFrequencyText = updatedValue.filter { it.isDigit() }
+                                },
+                                modifier = Modifier
+                                    .focusRequester(frequencyFocusRequester),
+                                textStyle = TextStyle(
+                                    color = Color.White,
+                                    fontSize = MaterialTheme.typography.headlineSmall.fontSize,
+                                    fontWeight = MaterialTheme.typography.headlineSmall.fontWeight,
+                                    textAlign = TextAlign.Center
+                                ),
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Number,
+                                    imeAction = ImeAction.Done
+                                ),
+                                keyboardActions = KeyboardActions(
+                                    onDone = { applyEditedFrequency() }
+                                ),
+                                cursorBrush = SolidColor(Color.White)
+                            )
+                        } else {
+                            Text(
+                                text = selectedFrequencyText,
+                                modifier = Modifier.clickable {
+                                    editingFrequency = true
+                                },
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = Color.White,
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Clip
+                            )
+                        }
                         Text(
                             text = " ${uiState.mode.wireValue.uppercase()}",
                             style = MaterialTheme.typography.labelLarge,
@@ -512,11 +800,41 @@ fun RadioScreen(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                listOf(
+                    RadioMode.USB to "USB",
+                    RadioMode.LSB to "LSB",
+                    RadioMode.AM to "AM",
+                    RadioMode.CWU to "CWU"
+                ).forEach { (mode, label) ->
+                    val active = uiState.mode == mode
+                    Button(
+                        onClick = { viewModel.changeMode(mode) },
+                        colors = if (active) {
+                            ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            )
+                        } else {
+                            ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    ) {
+                        Text(label)
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 CompactControlChip(
-                    label = "PWR",
-                    onClick = { viewModel.connect() },
+                    label = "MIN",
+                    onClick = { viewModel.zoomMinSpectrum() },
                     modifier = Modifier.weight(1f)
                 )
                 CompactControlChip(
@@ -540,17 +858,71 @@ fun RadioScreen(
                     modifier = Modifier.weight(1f)
                 )
             }
+
+            if (isSsbMode) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF18222D))
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = "Passband ${ssbPassbandRange.start.roundToLong()}-${ssbPassbandRange.endInclusive.roundToLong()} Hz",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White.copy(alpha = 0.9f)
+                    )
+                    RangeSlider(
+                        value = ssbPassbandRange,
+                        onValueChange = { updatedRange ->
+                            val lowerEdgeHz = updatedRange.start.roundToLong().coerceIn(0L, 3950L).toInt()
+                            val upperEdgeHz = updatedRange.endInclusive
+                                .roundToLong()
+                                .coerceIn((lowerEdgeHz + 50).toLong(), 4000L)
+                                .toInt()
+                            if (uiState.mode == RadioMode.USB) {
+                                viewModel.changeFilter(lowerEdgeHz, upperEdgeHz)
+                            } else {
+                                viewModel.changeFilter(-upperEdgeHz, -lowerEdgeHz)
+                            }
+                        },
+                        valueRange = 0f..4000f
+                    )
+                }
+            } else if (isCwMode) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF18222D))
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = "CW width $cwWidthHz Hz",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White.copy(alpha = 0.9f)
+                    )
+                    Slider(
+                        value = cwWidthHz.toFloat(),
+                        onValueChange = { updatedWidth ->
+                            val snappedWidthHz = ((updatedWidth / 100f).roundToLong() * 100L)
+                                .coerceIn(100L, 1000L)
+                                .toInt()
+                            val halfWidthHz = snappedWidthHz / 2
+                            viewModel.changeFilter(-halfWidthHz, halfWidthHz)
+                        },
+                        valueRange = 100f..1000f,
+                        steps = 8
+                    )
+                }
+            }
         }
 
         RadioControls(
-            onConnect = { viewModel.connect() },
-            currentMode = uiState.mode,
-            onModeSelected = { mode: RadioMode -> viewModel.changeMode(mode) },
             audioVolume = uiState.audioVolume,
             audioMuted = uiState.audioMuted,
             onAudioVolumeChanged = { volume -> viewModel.setAudioVolume(volume) },
-            onToggleMute = { viewModel.toggleMute() },
-            showConnectButton = false
+            onToggleMute = { viewModel.toggleMute() }
         )
 
         if (bandButtons.isNotEmpty()) {
@@ -588,7 +960,10 @@ private fun CompactControlChip(
 ) {
     Box(
         modifier = modifier
-            .background(if (active) Color(0xFF3A4C60) else Color(0xFF243241))
+            .background(
+                if (active) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.surfaceVariant
+            )
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center
@@ -596,7 +971,11 @@ private fun CompactControlChip(
         Text(
             text = label,
             style = MaterialTheme.typography.labelLarge,
-            color = Color.White,
+            color = if (active) {
+                MaterialTheme.colorScheme.onPrimary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
             textAlign = TextAlign.Center,
             maxLines = 1,
             softWrap = false
@@ -686,6 +1065,35 @@ private data class AxisTick(
     val frequencyHz: Double,
     val isMajor: Boolean
 )
+
+private val PowerIcon: ImageVector = ImageVector.Builder(
+    name = "PowerIcon",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f
+).apply {
+    path(
+        fill = null,
+        stroke = androidx.compose.ui.graphics.SolidColor(Color.White),
+        strokeLineWidth = 2.2f,
+        pathFillType = PathFillType.NonZero
+    ) {
+        moveTo(9f, 4.5f)
+        arcTo(7.5f, 7.5f, 0f, false, false, 4.5f, 12f)
+        arcTo(7.5f, 7.5f, 0f, false, false, 19.5f, 12f)
+        arcTo(7.5f, 7.5f, 0f, false, false, 15f, 4.5f)
+    }
+    path(
+        fill = null,
+        stroke = androidx.compose.ui.graphics.SolidColor(Color.White),
+        strokeLineWidth = 2.2f,
+        pathFillType = PathFillType.NonZero
+    ) {
+        moveTo(12f, 3f)
+        lineTo(12f, 10f)
+    }
+}.build()
 
 private val AXIS_MAJOR_TICK_STEPS_HZ = listOf(
     1_000L,

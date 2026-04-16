@@ -605,6 +605,16 @@ const bandRanges = {
 // Expose bandRanges globally for band state monitor
 window.bandRanges = bandRanges;
 
+function resolveBandRange(bandName) {
+    if (window.amateurBands && window.amateurBands.length > 0) {
+        const band = window.amateurBands.find(b => b.label === bandName);
+        if (band) {
+            return { min: band.start, max: band.end };
+        }
+    }
+    return bandRanges[bandName] || null;
+}
+
 // Bookmarks are now managed by bookmark-manager.js
 // Access via window.bookmarks and window.bookmarkPositions
 
@@ -612,7 +622,7 @@ window.bandRanges = bandRanges;
 function updateBandButtons(frequency) {
     document.querySelectorAll('.band-btn').forEach(btn => {
         const band = btn.getAttribute('data-band');
-        const range = bandRanges[band];
+        const range = resolveBandRange(band);
         if (range && frequency >= range.min && frequency <= range.max) {
             btn.classList.add('active');
         } else {
@@ -3769,7 +3779,7 @@ function setFrequency(freq) {
 
 // Set band - zoom spectrum to show entire band and tune to center
 function setBand(bandName) {
-    const range = bandRanges[bandName];
+    const range = resolveBandRange(bandName);
     if (!range) {
         log(`Unknown band: ${bandName}`, 'error');
         return;

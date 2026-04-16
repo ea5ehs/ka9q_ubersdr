@@ -1,5 +1,6 @@
 package es.niceto.ubersdr.presentation.radio
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import es.niceto.ubersdr.data.network.dto.BandDto
@@ -16,6 +17,11 @@ import kotlinx.coroutines.launch
 class RadioViewModel(
     private val sessionRepository: SessionRepository
 ) : ViewModel() {
+    private companion object {
+        const val TAG = "UberSDR-RadioVM"
+        const val MIN_VALID_SPECTRUM_FREQ_HZ = 10_000L
+        const val MAX_VALID_SPECTRUM_FREQ_HZ = 30_000_000L
+    }
 
     private data class ModeBandwidth(
         val lowHz: Int,
@@ -25,6 +31,7 @@ class RadioViewModel(
     private val _uiState = MutableStateFlow(RadioUiState())
     val uiState: StateFlow<RadioUiState> = _uiState.asStateFlow()
     private var maxObservedSpectrumBinBandwidthHz: Double? = null
+    private var maxObservedSpectrumTotalBandwidthHz: Double? = null
 
     private val baseUrl = "https://ubersdr.niceto.es/"
 
@@ -34,12 +41,14 @@ class RadioViewModel(
 
     private val audioListener = object : AudioWsClient.Listener {
         override fun onConnecting() {
+            Log.d(TAG, "audioListener.onConnecting")
             _uiState.value = _uiState.value.copy(
                 statusText = "AUDIO WS CONNECTING"
             )
         }
 
         override fun onOpen() {
+            Log.d(TAG, "audioListener.onOpen")
             _uiState.value = _uiState.value.copy(
                 statusText = "AUDIO WS OPEN"
             )
@@ -96,6 +105,14 @@ class RadioViewModel(
                                 maxObservedSpectrumBinBandwidthHz = maxOf(
                                     maxObservedSpectrumBinBandwidthHz ?: validBinBandwidthHz,
                                     validBinBandwidthHz
+                                )
+                            }
+                            val validTotalBandwidthHz = config.totalBandwidthHz
+                                ?.takeIf { it.isFinite() && it > 0.0 }
+                            if (validTotalBandwidthHz != null) {
+                                maxObservedSpectrumTotalBandwidthHz = maxOf(
+                                    maxObservedSpectrumTotalBandwidthHz ?: validTotalBandwidthHz,
+                                    validTotalBandwidthHz
                                 )
                             }
 
@@ -159,6 +176,7 @@ class RadioViewModel(
         }
 
         override fun onFailure(message: String) {
+            Log.w(TAG, "audioListener.onFailure: $message")
             _uiState.value = _uiState.value.copy(
                 isConnected = false,
                 statusText = "AUDIO WS ERROR: $message"
@@ -166,6 +184,7 @@ class RadioViewModel(
         }
 
         override fun onClosed() {
+            Log.d(TAG, "audioListener.onClosed")
             _uiState.value = _uiState.value.copy(
                 isConnected = false,
                 statusText = "AUDIO WS CLOSED"
@@ -191,9 +210,9 @@ class RadioViewModel(
 
     private fun deriveBandwidthForMode(mode: RadioMode): ModeBandwidth {
         return when (mode) {
-            RadioMode.USB -> ModeBandwidth(lowHz = 0, highHz = 2700)
-            RadioMode.LSB -> ModeBandwidth(lowHz = -2700, highHz = 0)
-            RadioMode.CWU -> ModeBandwidth(lowHz = 0, highHz = 600)
+            RadioMode.USB -> ModeBandwidth(lowHz = 150, highHz = 2700)
+            RadioMode.LSB -> ModeBandwidth(lowHz = -2700, highHz = -150)
+            RadioMode.CWU -> ModeBandwidth(lowHz = -250, highHz = 250)
             RadioMode.AM -> ModeBandwidth(lowHz = -4000, highHz = 4000)
         }
     }
@@ -222,6 +241,11 @@ class RadioViewModel(
     }
 
     fun connect() {
+        Log.d(
+            TAG,
+            "connect() requested isConnected=${_uiState.value.isConnected} " +
+                "muted=${_uiState.value.audioMuted} volume=${_uiState.value.audioVolume}"
+        )
         _uiState.value = _uiState.value.copy(
             statusText = "Connecting..."
         )
@@ -230,6 +254,7 @@ class RadioViewModel(
             val result = sessionRepository.bootstrapSession()
 
             if (!result.allowed) {
+                Log.w(TAG, "connect() rejected reason=${result.reason}")
                 _uiState.value = _uiState.value.copy(
                     isConnected = false,
                     statusText = "ERROR: ${result.reason}"
@@ -250,12 +275,35 @@ class RadioViewModel(
                 statusText = "AUDIO WS CONNECTING"
             )
 
+            Log.d(
+                TAG,
+                "connect() bootstrap ok session=${result.sessionId} " +
+                    "freq=$resolvedFrequency mode=${resolvedMode.wireValue}"
+            )
             connectAudioSession(
                 frequencyHz = resolvedFrequency,
                 mode = resolvedMode,
                 bandwidthLowHz = resolvedBandwidth.lowHz,
                 bandwidthHighHz = resolvedBandwidth.highHz
             )
+        }
+    }
+
+    fun disconnect() {
+        Log.d(TAG, "disconnect() requested")
+        sessionRepository.disconnect()
+        _uiState.value = _uiState.value.copy(
+            isConnected = false,
+            statusText = "Disconnected"
+        )
+    }
+
+    fun togglePower() {
+        Log.d(TAG, "togglePower() currentConnected=${_uiState.value.isConnected}")
+        if (_uiState.value.isConnected) {
+            disconnect()
+        } else {
+            connect()
         }
     }
 
@@ -321,6 +369,24 @@ class RadioViewModel(
             bandwidthHighHz = highHz,
             statusText = "Filter change requested"
         )
+
+        if (_uiState.value.isConnected) {
+            if (sessionRepository.hasActiveAudioConnection()) {
+                sessionRepository.sendAudioTune(
+                    frequencyHz = _uiState.value.frequencyHz,
+                    mode = _uiState.value.mode.wireValue,
+                    bandwidthLowHz = lowHz,
+                    bandwidthHighHz = highHz
+                )
+            } else {
+                connectAudioSession(
+                    frequencyHz = _uiState.value.frequencyHz,
+                    mode = _uiState.value.mode,
+                    bandwidthLowHz = lowHz,
+                    bandwidthHighHz = highHz
+                )
+            }
+        }
     }
 
     fun zoomInSpectrum() {
@@ -391,19 +457,143 @@ class RadioViewModel(
         )
     }
 
-    fun centerSpectrumOnTargetFrequency() {
-        val targetCenterFreqHz = _uiState.value.frequencyHz
+    fun zoomMinSpectrum() {
+        val currentBinBandwidthHz = _uiState.value.spectrumBinBandwidthHz
+            ?.takeIf { it.isFinite() && it > 0.0 }
+            ?: return
+        val maxBinBandwidthHz = maxObservedSpectrumBinBandwidthHz
+            ?.takeIf { it.isFinite() && it > 0.0 }
+            ?: currentBinBandwidthHz
+        val maxTotalBandwidthHz = maxObservedSpectrumTotalBandwidthHz
+            ?.takeIf { it.isFinite() && it > 0.0 }
+            ?: _uiState.value.spectrumTotalBandwidthHz
+            ?: return
+        val requestedCenterFreqHz = _uiState.value.frequencyHz
             .takeIf { it > 0L }
             ?: _uiState.value.spectrumCenterFreqHz
             ?: return
+        val halfSpanHz = maxTotalBandwidthHz / 2.0
+        val minCenterHz = MIN_VALID_SPECTRUM_FREQ_HZ.toDouble() + halfSpanHz
+        val maxCenterHz = MAX_VALID_SPECTRUM_FREQ_HZ.toDouble() - halfSpanHz
+        val targetCenterFreqHz = if (minCenterHz <= maxCenterHz) {
+            requestedCenterFreqHz.toDouble()
+                .coerceIn(minCenterHz, maxCenterHz)
+                .toLong()
+        } else {
+            ((MIN_VALID_SPECTRUM_FREQ_HZ + MAX_VALID_SPECTRUM_FREQ_HZ) / 2L)
+        }
+        val currentCenterFreqHz = _uiState.value.spectrumCenterFreqHz
+        if (currentBinBandwidthHz >= maxBinBandwidthHz && currentCenterFreqHz == targetCenterFreqHz) {
+            _uiState.value = _uiState.value.copy(
+                statusText = "SPECTRUM ZOOM MIN ignored at max range"
+            )
+            return
+        }
+
+        sessionRepository.sendSpectrumZoom(
+            centerFreqHz = targetCenterFreqHz,
+            binBandwidthHz = maxBinBandwidthHz
+        )
+
+        _uiState.value = _uiState.value.copy(
+            statusText = "SPECTRUM ZOOM MIN cf=$targetCenterFreqHz binBw=$maxBinBandwidthHz"
+        )
+    }
+
+    fun panSpectrumTo(centerFreqHz: Long) {
+        val totalBandwidthHz = _uiState.value.spectrumTotalBandwidthHz
+            ?.takeIf { it.isFinite() && it > 0.0 }
+            ?: return
+        val halfSpanHz = totalBandwidthHz / 2.0
+        val minCenterHz = MIN_VALID_SPECTRUM_FREQ_HZ.toDouble() + halfSpanHz
+        val maxCenterHz = MAX_VALID_SPECTRUM_FREQ_HZ.toDouble() - halfSpanHz
+        val targetCenterFreqHz = if (minCenterHz <= maxCenterHz) {
+            centerFreqHz.toDouble()
+                .coerceIn(minCenterHz, maxCenterHz)
+                .toLong()
+        } else {
+            ((MIN_VALID_SPECTRUM_FREQ_HZ + MAX_VALID_SPECTRUM_FREQ_HZ) / 2L)
+        }
 
         sessionRepository.sendSpectrumPan(
             centerFreqHz = targetCenterFreqHz
         )
 
         _uiState.value = _uiState.value.copy(
+            spectrumCenterFreqHz = targetCenterFreqHz,
             statusText = "SPECTRUM PAN cf=$targetCenterFreqHz"
         )
+    }
+
+    fun dragTuneSpectrumTo(frequencyHz: Long): Long {
+        val targetFrequencyHz = frequencyHz.coerceIn(
+            MIN_VALID_SPECTRUM_FREQ_HZ,
+            MAX_VALID_SPECTRUM_FREQ_HZ
+        )
+        val totalBandwidthHz = _uiState.value.spectrumTotalBandwidthHz
+            ?.takeIf { it.isFinite() && it > 0.0 }
+        val targetCenterFreqHz = if (totalBandwidthHz != null) {
+            val halfSpanHz = totalBandwidthHz / 2.0
+            val minCenterHz = MIN_VALID_SPECTRUM_FREQ_HZ.toDouble() + halfSpanHz
+            val maxCenterHz = MAX_VALID_SPECTRUM_FREQ_HZ.toDouble() - halfSpanHz
+            if (minCenterHz <= maxCenterHz) {
+                targetFrequencyHz.toDouble()
+                    .coerceIn(minCenterHz, maxCenterHz)
+                    .toLong()
+            } else {
+                ((MIN_VALID_SPECTRUM_FREQ_HZ + MAX_VALID_SPECTRUM_FREQ_HZ) / 2L)
+            }
+        } else {
+            targetFrequencyHz
+        }
+        val bandwidth = deriveBandwidthForMode(_uiState.value.mode)
+
+        Log.d(
+            TAG,
+            "dragTuneSpectrumTo prev=${_uiState.value.frequencyHz} " +
+                "next=$targetFrequencyHz center=$targetCenterFreqHz"
+        )
+
+        _uiState.value = _uiState.value.copy(
+            frequencyHz = targetFrequencyHz,
+            spectrumCenterFreqHz = targetCenterFreqHz,
+            bandwidthLowHz = bandwidth.lowHz,
+            bandwidthHighHz = bandwidth.highHz,
+            statusText = "DRAG TUNE f=$targetFrequencyHz cf=$targetCenterFreqHz"
+        )
+
+        if (_uiState.value.isConnected) {
+            if (sessionRepository.hasActiveAudioConnection()) {
+                sessionRepository.sendAudioTune(
+                    frequencyHz = targetFrequencyHz,
+                    mode = _uiState.value.mode.wireValue,
+                    bandwidthLowHz = bandwidth.lowHz,
+                    bandwidthHighHz = bandwidth.highHz
+                )
+            } else {
+                connectAudioSession(
+                    frequencyHz = targetFrequencyHz,
+                    mode = _uiState.value.mode,
+                    bandwidthLowHz = bandwidth.lowHz,
+                    bandwidthHighHz = bandwidth.highHz
+                )
+            }
+        }
+
+        sessionRepository.sendSpectrumPan(
+            centerFreqHz = targetCenterFreqHz
+        )
+
+        return targetFrequencyHz
+    }
+
+    fun centerSpectrumOnTargetFrequency() {
+        val targetCenterFreqHz = _uiState.value.frequencyHz
+            .takeIf { it > 0L }
+            ?: _uiState.value.spectrumCenterFreqHz
+            ?: return
+
+        panSpectrumTo(targetCenterFreqHz)
     }
 
     fun selectBand(label: String) {
@@ -441,6 +631,7 @@ class RadioViewModel(
     }
 
     fun setAudioVolume(volume: Float) {
+        Log.d(TAG, "setAudioVolume() volume=$volume")
         sessionRepository.setAudioVolume(volume)
         _uiState.value = _uiState.value.copy(
             audioVolume = volume,
@@ -450,6 +641,7 @@ class RadioViewModel(
 
     fun toggleMute() {
         val muted = !_uiState.value.audioMuted
+        Log.d(TAG, "toggleMute() muted=$muted")
         sessionRepository.setAudioMuted(muted)
         _uiState.value = _uiState.value.copy(
             audioMuted = muted,
