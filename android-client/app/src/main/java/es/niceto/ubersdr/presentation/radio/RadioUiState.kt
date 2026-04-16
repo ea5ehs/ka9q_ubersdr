@@ -12,6 +12,8 @@ data class RadioUiState(
     val statusText: String = "Idle",
     val audioVolume: Float = 1f,
     val audioMuted: Boolean = false,
+    val tuningStepHz: Long = 1_000L,
+    val keepScreenOn: Boolean = false,
     val spectrumCenterFreqHz: Long? = null,
     val spectrumBinCount: Int? = null,
     val spectrumBinBandwidthHz: Double? = null,

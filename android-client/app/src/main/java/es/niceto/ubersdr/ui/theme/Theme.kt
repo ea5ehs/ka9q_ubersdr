@@ -7,11 +7,13 @@ import androidx.compose.runtime.Composable
 private val UberSdrColorScheme = darkColorScheme(
     primary = CompactActive,
     onPrimary = CompactTextPrimary,
+    secondary = CompactSecondary,
+    onSecondary = CompactTextPrimary,
     surface = CompactSurface,
     onSurface = CompactTextPrimary,
     surfaceVariant = CompactInactive,
-    onSurfaceVariant = CompactTextPrimary,
-    background = CompactSurface,
+    onSurfaceVariant = CompactTextSecondary,
+    background = CompactBackground,
     onBackground = CompactTextPrimary
 )
 

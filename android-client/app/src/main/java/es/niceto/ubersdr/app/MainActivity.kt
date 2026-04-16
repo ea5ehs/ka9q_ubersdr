@@ -31,7 +31,8 @@ class MainActivity : ComponentActivity() {
         val api = retrofit.create(ConnectionApi::class.java)
         val service = ConnectionService(api)
         val sessionRepository = SessionRepository(service)
-        val viewModel = RadioViewModel(sessionRepository)
+        val settingsStore = AppSettingsStore(applicationContext)
+        val viewModel = RadioViewModel(sessionRepository, settingsStore)
 
         setContent {
             UberSdrTheme {

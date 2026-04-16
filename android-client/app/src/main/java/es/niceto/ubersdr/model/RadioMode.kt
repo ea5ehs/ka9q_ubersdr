@@ -4,6 +4,7 @@ enum class RadioMode(val wireValue: String) {
     USB("usb"),
     LSB("lsb"),
     CWU("cwu"),
+    CWL("cwl"),
     AM("am");
 
     companion object {

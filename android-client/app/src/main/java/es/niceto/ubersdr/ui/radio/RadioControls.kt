@@ -1,6 +1,7 @@
 package es.niceto.ubersdr.ui.radio
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,6 +14,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -22,6 +24,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
+import es.niceto.ubersdr.ui.theme.CompactSurface
+import es.niceto.ubersdr.ui.theme.CompactTextSecondary
 
 @Composable
 fun RadioControls(
@@ -38,20 +42,24 @@ fun RadioControls(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(40.dp)
-                .background(Color(0xFF121922))
-                .padding(horizontal = 6.dp),
+                .height(34.dp)
+                .background(CompactSurface)
+                .border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+                )
+                .padding(horizontal = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(
                 onClick = onToggleMute,
-                modifier = Modifier.size(35.dp)
+                modifier = Modifier.size(32.dp)
             ) {
                 Icon(
                     imageVector = SpeakerIcon,
                     contentDescription = if (audioMuted) "Muted" else "Volume",
-                    modifier = Modifier.size(25.dp),
+                    modifier = Modifier.size(22.dp),
                     tint = if (audioMuted) {
                         Color(0xFFE35B5B)
                     } else {
@@ -64,17 +72,22 @@ fun RadioControls(
                 value = audioVolume,
                 onValueChange = onAudioVolumeChanged,
                 valueRange = 0f..1f,
+                colors = SliderDefaults.colors(
+                    thumbColor = MaterialTheme.colorScheme.primary,
+                    activeTrackColor = MaterialTheme.colorScheme.primary,
+                    inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                ),
                 modifier = Modifier
                     .fillMaxWidth(0.72f)
-                    .height(25.dp)
-                    .graphicsLayer(scaleY = 0.6f)
+                    .height(20.dp)
+                    .graphicsLayer(scaleY = 0.48f)
             )
 
             Text(
                 text = "${(audioVolume * 100).toInt()}%",
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color(0xFFB8C4CF),
-                modifier = Modifier.width(50.dp)
+                style = MaterialTheme.typography.bodySmall,
+                color = CompactTextSecondary,
+                modifier = Modifier.width(44.dp)
             )
         }
     }

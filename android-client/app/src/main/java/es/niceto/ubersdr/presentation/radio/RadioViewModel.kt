@@ -3,19 +3,28 @@ package es.niceto.ubersdr.presentation.radio
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import es.niceto.ubersdr.app.AppSettingsStore
+import es.niceto.ubersdr.app.DEFAULT_AUDIO_MUTED
+import es.niceto.ubersdr.app.DEFAULT_AUDIO_VOLUME
+import es.niceto.ubersdr.app.DEFAULT_FREQUENCY_HZ
+import es.niceto.ubersdr.app.DEFAULT_KEEP_SCREEN_ON
+import es.niceto.ubersdr.app.DEFAULT_MODE
+import es.niceto.ubersdr.app.DEFAULT_TUNING_STEP_HZ
 import es.niceto.ubersdr.data.network.dto.BandDto
 import es.niceto.ubersdr.data.websocket.AudioWsClient
 import es.niceto.ubersdr.data.websocket.SpectrumWsClient
 import es.niceto.ubersdr.model.RadioMode
 import es.niceto.ubersdr.session.SessionRepository
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class RadioViewModel(
-    private val sessionRepository: SessionRepository
+    private val sessionRepository: SessionRepository,
+    private val settingsStore: AppSettingsStore
 ) : ViewModel() {
     private companion object {
         const val TAG = "UberSDR-RadioVM"
@@ -37,6 +46,7 @@ class RadioViewModel(
 
     init {
         loadBands()
+        restorePersistedSettings()
     }
 
     private val audioListener = object : AudioWsClient.Listener {
@@ -213,6 +223,7 @@ class RadioViewModel(
             RadioMode.USB -> ModeBandwidth(lowHz = 150, highHz = 2700)
             RadioMode.LSB -> ModeBandwidth(lowHz = -2700, highHz = -150)
             RadioMode.CWU -> ModeBandwidth(lowHz = -250, highHz = 250)
+            RadioMode.CWL -> ModeBandwidth(lowHz = -250, highHz = 250)
             RadioMode.AM -> ModeBandwidth(lowHz = -4000, highHz = 4000)
         }
     }
@@ -224,6 +235,30 @@ class RadioViewModel(
                     _uiState.value = _uiState.value.copy(
                         availableBands = bands
                     )
+                }
+        }
+    }
+
+    private fun restorePersistedSettings() {
+        viewModelScope.launch {
+            runCatching { settingsStore.settings.first() }
+                .onSuccess { settings ->
+                    val restoredBandwidth = deriveBandwidthForMode(settings.mode)
+                    sessionRepository.setAudioVolume(settings.audioVolume)
+                    sessionRepository.setAudioMuted(settings.audioMuted)
+                    _uiState.value = _uiState.value.copy(
+                        frequencyHz = settings.frequencyHz,
+                        mode = settings.mode,
+                        bandwidthLowHz = restoredBandwidth.lowHz,
+                        bandwidthHighHz = restoredBandwidth.highHz,
+                        audioVolume = settings.audioVolume,
+                        audioMuted = settings.audioMuted,
+                        tuningStepHz = settings.tuningStepHz,
+                        keepScreenOn = settings.keepScreenOn
+                    )
+                }
+                .onFailure {
+                    Log.w(TAG, "restorePersistedSettings() failed: ${it.message}")
                 }
         }
     }
@@ -262,8 +297,11 @@ class RadioViewModel(
                 return@launch
             }
 
-            val resolvedMode = RadioMode.fromWireValue(result.defaultMode ?: "usb")
-            val resolvedFrequency = result.defaultFrequency ?: _uiState.value.frequencyHz
+            val resolvedMode = _uiState.value.mode
+            val resolvedFrequency = _uiState.value.frequencyHz
+                .takeIf { it in MIN_VALID_SPECTRUM_FREQ_HZ..MAX_VALID_SPECTRUM_FREQ_HZ }
+                ?: result.defaultFrequency
+                ?: DEFAULT_FREQUENCY_HZ
             val resolvedBandwidth = deriveBandwidthForMode(resolvedMode)
 
             _uiState.value = _uiState.value.copy(
@@ -333,14 +371,20 @@ class RadioViewModel(
                 )
             }
         }
+
+        viewModelScope.launch {
+            settingsStore.saveFrequency(frequencyHz)
+        }
     }
 
     fun changeMode(mode: RadioMode) {
         val updatedBandwidth = deriveBandwidthForMode(mode)
+        val updatedTuningStepHz = if (mode.wireValue.startsWith("cw")) 10L else 1_000L
         _uiState.value = _uiState.value.copy(
             mode = mode,
             bandwidthLowHz = updatedBandwidth.lowHz,
             bandwidthHighHz = updatedBandwidth.highHz,
+            tuningStepHz = updatedTuningStepHz,
             statusText = "Mode change requested"
         )
 
@@ -360,6 +404,11 @@ class RadioViewModel(
                     bandwidthHighHz = updatedBandwidth.highHz
                 )
             }
+        }
+
+        viewModelScope.launch {
+            settingsStore.saveMode(mode)
+            settingsStore.saveTuningStep(updatedTuningStepHz)
         }
     }
 
@@ -637,6 +686,10 @@ class RadioViewModel(
             audioVolume = volume,
             statusText = "Audio volume ${(volume * 100).toInt()}%"
         )
+
+        viewModelScope.launch {
+            settingsStore.saveAudioVolume(volume)
+        }
     }
 
     fun toggleMute() {
@@ -647,6 +700,52 @@ class RadioViewModel(
             audioMuted = muted,
             statusText = if (muted) "Audio muted" else "Audio unmuted"
         )
+
+        viewModelScope.launch {
+            settingsStore.saveAudioMuted(muted)
+        }
+    }
+
+    fun setTuningStep(stepHz: Long) {
+        val safeStepHz = stepHz.takeIf { it in listOf(10L, 100L, 1_000L, 5_000L, 10_000L) } ?: DEFAULT_TUNING_STEP_HZ
+        _uiState.value = _uiState.value.copy(
+            tuningStepHz = safeStepHz
+        )
+
+        viewModelScope.launch {
+            settingsStore.saveTuningStep(safeStepHz)
+        }
+    }
+
+    fun setKeepScreenOn(enabled: Boolean) {
+        _uiState.value = _uiState.value.copy(
+            keepScreenOn = enabled
+        )
+
+        viewModelScope.launch {
+            settingsStore.saveKeepScreenOn(enabled)
+        }
+    }
+
+    fun resetPersistedSettings() {
+        val defaultBandwidth = deriveBandwidthForMode(DEFAULT_MODE)
+        sessionRepository.setAudioVolume(DEFAULT_AUDIO_VOLUME)
+        sessionRepository.setAudioMuted(DEFAULT_AUDIO_MUTED)
+        _uiState.value = _uiState.value.copy(
+            frequencyHz = DEFAULT_FREQUENCY_HZ,
+            mode = DEFAULT_MODE,
+            bandwidthLowHz = defaultBandwidth.lowHz,
+            bandwidthHighHz = defaultBandwidth.highHz,
+            audioVolume = DEFAULT_AUDIO_VOLUME,
+            audioMuted = DEFAULT_AUDIO_MUTED,
+            tuningStepHz = DEFAULT_TUNING_STEP_HZ,
+            keepScreenOn = DEFAULT_KEEP_SCREEN_ON,
+            statusText = "Ajustes restablecidos"
+        )
+
+        viewModelScope.launch {
+            settingsStore.clear()
+        }
     }
 
     fun dispatch(action: RadioAction) {

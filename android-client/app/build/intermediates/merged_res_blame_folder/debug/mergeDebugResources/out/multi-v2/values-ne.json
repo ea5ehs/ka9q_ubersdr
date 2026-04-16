@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "es.niceto.ubersdr.app-mergeDebugResources-46:/values-ne/values-ne.xml",
+            "outputFile": "es.niceto.ubersdr.app-mergeDebugResources-50:/values-ne/values-ne.xml",
             "map": [
                 {
                     "source": "C:\\Users\\ea5eh\\.gradle\\caches\\9.3.1\\transforms\\f69918a63ee364b6e5f2f5b8693fcd16\\workspace\\transformed\\core-1.17.0\\res\\values-ne\\values-ne.xml",

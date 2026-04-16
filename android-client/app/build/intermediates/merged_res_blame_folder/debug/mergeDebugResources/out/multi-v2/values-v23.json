@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "es.niceto.ubersdr.app-mergeDebugResources-46:/values-v23/values-v23.xml",
+            "outputFile": "es.niceto.ubersdr.app-mergeDebugResources-50:/values-v23/values-v23.xml",
             "map": [
                 {
                     "source": "C:\\Users\\ea5eh\\.gradle\\caches\\9.3.1\\transforms\\1deb9667fc57f105b10b598ddeb1d10f\\workspace\\transformed\\cardview-1.0.0\\res\\values-v23\\values-v23.xml",
