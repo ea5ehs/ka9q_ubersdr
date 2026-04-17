@@ -13,7 +13,6 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
@@ -21,10 +20,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -44,6 +45,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -54,6 +56,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -64,7 +67,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -76,9 +78,12 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import es.niceto.ubersdr.model.RadioMode
@@ -92,6 +97,7 @@ import kotlin.math.roundToLong
 
 private const val CW_SPEC_BUFFER_CAPACITY = 10
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun RadioScreen(
     viewModel: RadioViewModel,
@@ -114,9 +120,9 @@ fun RadioScreen(
     var waterfallBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var tappedFrequencyHz by remember { mutableStateOf<Long?>(null) }
     var hoverFrequencyHz by remember { mutableStateOf<Long?>(null) }
-    var editingFrequency by remember { mutableStateOf(false) }
-    var editingFrequencyText by remember {
-        mutableStateOf(TextFieldValue(uiState.frequencyHz.toString()))
+    var showFrequencyEditDialog by remember { mutableStateOf(false) }
+    var frequencyEditText by remember {
+        mutableStateOf(TextFieldValue(formatEditableFrequencyKhz(uiState.frequencyHz)))
     }
     val cwSpectrumBuffer = remember { mutableStateListOf<ByteArray>() }
     var cwSpectrumBufferKey by remember { mutableStateOf<CwSpectrumBufferKey?>(null) }
@@ -247,34 +253,29 @@ fun RadioScreen(
         }
     }
     val applyEditedFrequency = {
-        val parsedFrequencyHz = editingFrequencyText
-            .text
-            .filter { it.isDigit() }
-            .takeIf { it.isNotBlank() }
-            ?.toLongOrNull()
+        val parsedFrequencyHz = parseEditableFrequencyKhzToHz(frequencyEditText.text)
 
         if (parsedFrequencyHz != null && parsedFrequencyHz in minValidFrequencyHz..maxValidFrequencyHz) {
             viewModel.tune(parsedFrequencyHz)
-            editingFrequency = false
+            showFrequencyEditDialog = false
             keyboardController?.hide()
             focusManager.clearFocus()
         }
     }
 
-    LaunchedEffect(uiState.frequencyHz, editingFrequency) {
-        if (!editingFrequency) {
-            editingFrequencyText = TextFieldValue(uiState.frequencyHz.toString())
+    LaunchedEffect(uiState.frequencyHz, showFrequencyEditDialog) {
+        if (!showFrequencyEditDialog) {
+            frequencyEditText = TextFieldValue(formatEditableFrequencyKhz(uiState.frequencyHz))
         }
     }
 
-    LaunchedEffect(editingFrequency) {
-        if (editingFrequency) {
-            val currentText = uiState.frequencyHz.toString()
-            editingFrequencyText = TextFieldValue(
+    LaunchedEffect(showFrequencyEditDialog) {
+        if (showFrequencyEditDialog) {
+            val currentText = formatEditableFrequencyKhz(uiState.frequencyHz)
+            frequencyEditText = TextFieldValue(
                 text = currentText,
-                selection = TextRange(0, currentText.length)
+                selection = TextRange(currentText.length)
             )
-            frequencyFocusRequester.requestFocus()
             keyboardController?.show()
         }
     }
@@ -391,17 +392,86 @@ fun RadioScreen(
         }
     }
 
-    Column(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .statusBarsPadding()
-            .padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        val isCompactLayout = maxWidth <= 380.dp || maxHeight <= 760.dp
+        val isRoomyHeight = maxHeight >= 900.dp
+        val isLowHeightLayout = maxHeight <= 760.dp
+        val screenHorizontalPadding = if (isCompactLayout) 10.dp else 16.dp
+        val screenTopPadding = if (isCompactLayout) 6.dp else 12.dp
+        val screenBottomPadding = if (isCompactLayout) 8.dp else 16.dp
+        val sectionSpacing = when {
+            isCompactLayout -> 6.dp
+            isRoomyHeight -> 14.dp
+            else -> 12.dp
+        }
+        val controlSpacing = if (isCompactLayout) 6.dp else 8.dp
+        val toolRowSpacing = when {
+            isCompactLayout -> 0.dp
+            isRoomyHeight -> 10.dp
+            else -> 6.dp
+        }
+        val compactChipPadding = if (isCompactLayout) {
+            PaddingValues(horizontal = 6.dp, vertical = 5.dp)
+        } else {
+            PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+        }
+        val tuneBarPadding = if (isCompactLayout) {
+            PaddingValues(horizontal = 8.dp, vertical = 5.dp)
+        } else {
+            PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+        }
+        val filterPanelPadding = if (isCompactLayout) {
+            PaddingValues(horizontal = 8.dp, vertical = 3.dp)
+        } else {
+            PaddingValues(horizontal = 10.dp, vertical = 5.dp)
+        }
+        val modeButtonPadding = if (isCompactLayout) {
+            PaddingValues(horizontal = 6.dp, vertical = 5.dp)
+        } else {
+            PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+        }
+        val waterfallHeight = when {
+            isLowHeightLayout -> 208.dp
+            isRoomyHeight -> 272.dp
+            else -> 240.dp
+        }
+        val topBarHeight = if (isCompactLayout) 30.dp else 32.dp
+        val topMenuIconHeight = if (isCompactLayout) 26.dp else 28.dp
+        val powerButtonHeight = if (isCompactLayout) 32.dp else 35.dp
+        val powerIconHeight = if (isCompactLayout) 22.dp else 25.dp
+        val sliderHeight = if (isCompactLayout) 18.dp else 20.dp
+        val sliderScaleY = if (isCompactLayout) 0.42f else 0.48f
+        val tuningStepChipLabel = when (uiState.tuningStepHz) {
+            1_000L -> if (isCompactLayout) "1k" else "1 kHz"
+            5_000L -> if (isCompactLayout) "5k" else "5 kHz"
+            10_000L -> if (isCompactLayout) "10k" else "10 kHz"
+            else -> if (isCompactLayout) uiState.tuningStepHz.toString() else "${uiState.tuningStepHz} Hz"
+        }
+        val frequencyDisplayText = formatFrequencyKhzSpanish(uiState.frequencyHz)
+        val frequencyDisplayTint = Color(0xFFA7FFB7)
+        val frequencySecondaryTint = frequencyDisplayTint.copy(alpha = 0.72f)
+        val frequencyDisplayMinHeight = if (isCompactLayout) 34.dp else 38.dp
+        val stepChipMinWidth = if (isCompactLayout) 42.dp else 48.dp
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(
+                    start = screenHorizontalPadding,
+                    top = screenTopPadding,
+                    end = screenHorizontalPadding,
+                    bottom = screenBottomPadding
+                ),
+            verticalArrangement = Arrangement.spacedBy(sectionSpacing)
+        ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(32.dp)
+                .height(topBarHeight)
                 .background(Color(0xFF18222D))
                 .padding(horizontal = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -410,7 +480,7 @@ fun RadioScreen(
             Box {
                 IconButton(
                     onClick = { topMenuExpanded = true },
-                    modifier = Modifier.height(28.dp)
+                    modifier = Modifier.height(topMenuIconHeight)
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Menu,
@@ -561,12 +631,12 @@ fun RadioScreen(
 
             IconButton(
                 onClick = viewModel::togglePower,
-                modifier = Modifier.height(35.dp)
+                modifier = Modifier.height(powerButtonHeight)
             ) {
                 Icon(
                     imageVector = PowerIcon,
                     contentDescription = "Power",
-                    modifier = Modifier.height(25.dp),
+                    modifier = Modifier.height(powerIconHeight),
                     tint = if (uiState.isConnected) Color(0xFF5EDC6A) else Color(0xFFE35B5B)
                 )
             }
@@ -576,7 +646,7 @@ fun RadioScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(240.dp)
+                    .height(waterfallHeight)
                     .background(Color(0xFF102030))
                     .border(1.dp, Color.White.copy(alpha = 0.70f)),
                 contentAlignment = Alignment.Center
@@ -623,7 +693,7 @@ fun RadioScreen(
                             modifier = Modifier
                                 .align(Alignment.TopStart)
                                 .fillMaxWidth()
-                                .height(28.dp)
+                                .height(if (isCompactLayout) 24.dp else 28.dp)
                                 .background(Color(0x66102030))
                                 .clipToBounds()
                         ) {
@@ -642,8 +712,8 @@ fun RadioScreen(
                                     minorTickStepHz = minorTickStepHz
                                 )
                                 val displayTicks = axisTicks
-                                val labelWidth = 64.dp
-                                val labelTopOffset = 10.dp
+                                val labelWidth = if (isCompactLayout) 56.dp else 64.dp
+                                val labelTopOffset = if (isCompactLayout) 8.dp else 10.dp
                                 val labeledTicks = buildList {
                                     var previousRightDp = (-labelWidth).value
 
@@ -688,7 +758,11 @@ fun RadioScreen(
                                             .align(Alignment.TopStart)
                                             .offset(x = tickOffset - (1.dp / 2))
                                             .width(1.dp)
-                                            .height(if (tick.isMajor) 9.dp else 5.dp)
+                                            .height(if (tick.isMajor) {
+                                                if (isCompactLayout) 7.dp else 9.dp
+                                            } else {
+                                                if (isCompactLayout) 4.dp else 5.dp
+                                            })
                                             .background(Color.White.copy(alpha = if (tick.isMajor) 0.85f else 0.55f))
                                     )
 
@@ -885,14 +959,15 @@ fun RadioScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(Color(0xFF18222D))
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        .padding(tuneBarPadding),
+                    horizontalArrangement = Arrangement.spacedBy(controlSpacing),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     CompactControlChip(
                         label = "<",
                         onClick = { viewModel.tune((uiState.frequencyHz - uiState.tuningStepHz).coerceIn(minValidFrequencyHz, maxValidFrequencyHz)) },
-                        interactionSource = decrementInteractionSource
+                        interactionSource = decrementInteractionSource,
+                        contentPadding = compactChipPadding
                     )
 
                     Row(
@@ -900,43 +975,25 @@ fun RadioScreen(
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (editingFrequency) {
-                            BasicTextField(
-                                value = editingFrequencyText,
-                                onValueChange = { updatedValue ->
-                                    val filteredText = updatedValue.text.filter { it.isDigit() }
-                                    val clampedSelection = updatedValue.selection.end.coerceIn(0, filteredText.length)
-                                    editingFrequencyText = TextFieldValue(
-                                        text = filteredText,
-                                        selection = TextRange(clampedSelection)
-                                    )
-                                },
-                                modifier = Modifier
-                                    .focusRequester(frequencyFocusRequester),
-                                textStyle = TextStyle(
-                                    color = Color.White,
-                                    fontSize = MaterialTheme.typography.headlineSmall.fontSize,
-                                    fontWeight = MaterialTheme.typography.headlineSmall.fontWeight,
-                                    textAlign = TextAlign.Center
-                                ),
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Number,
-                                    imeAction = ImeAction.Done
-                                ),
-                                keyboardActions = KeyboardActions(
-                                    onDone = { applyEditedFrequency() }
-                                ),
-                                cursorBrush = SolidColor(Color.White)
-                            )
-                        } else {
+                        Box(
+                            modifier = Modifier
+                                .defaultMinSize(minHeight = frequencyDisplayMinHeight)
+                                .background(Color(0xFF101A12))
+                                .border(1.dp, frequencyDisplayTint.copy(alpha = 0.18f))
+                                .padding(horizontal = if (isCompactLayout) 10.dp else 12.dp, vertical = 4.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Text(
-                                text = selectedFrequencyText,
+                                text = frequencyDisplayText,
                                 modifier = Modifier.clickable {
-                                    editingFrequency = true
+                                    showFrequencyEditDialog = true
                                 },
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = Color.White,
+                                style = MaterialTheme.typography.headlineSmall.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.SemiBold,
+                                    letterSpacing = if (isCompactLayout) 0.5.sp else 0.8.sp
+                                ),
+                                color = frequencyDisplayTint,
                                 textAlign = TextAlign.Center,
                                 maxLines = 1,
                                 softWrap = false,
@@ -944,9 +1001,9 @@ fun RadioScreen(
                             )
                         }
                         Text(
-                            text = " ${uiState.mode.wireValue.uppercase()}",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = Color.White.copy(alpha = 0.85f),
+                            text = " kHz",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = frequencySecondaryTint,
                             maxLines = 1,
                             softWrap = false
                         )
@@ -955,14 +1012,16 @@ fun RadioScreen(
                     CompactControlChip(
                         label = ">",
                         onClick = { viewModel.tune((uiState.frequencyHz + uiState.tuningStepHz).coerceIn(minValidFrequencyHz, maxValidFrequencyHz)) },
-                        interactionSource = incrementInteractionSource
+                        interactionSource = incrementInteractionSource,
+                        contentPadding = compactChipPadding
                     )
 
                     Box {
                         CompactControlChip(
-                            label = tuningStepLabel,
+                            label = tuningStepChipLabel,
                             onClick = { tuningStepMenuExpanded = true },
-                            modifier = Modifier.defaultMinSize(minWidth = 60.dp)
+                            modifier = Modifier.defaultMinSize(minWidth = stepChipMinWidth),
+                            contentPadding = compactChipPadding
                         )
                         DropdownMenu(
                             expanded = tuningStepMenuExpanded,
@@ -988,10 +1047,15 @@ fun RadioScreen(
                     }
                 }
             }
+            Spacer(modifier = Modifier.height(toolRowSpacing))
 
-            Row(
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
+                horizontalArrangement = Arrangement.spacedBy(
+                    controlSpacing,
+                    Alignment.CenterHorizontally
+                ),
+                verticalArrangement = Arrangement.spacedBy(controlSpacing)
             ) {
                 listOf(
                     RadioMode.USB to "USB",
@@ -1028,7 +1092,12 @@ fun RadioScreen(
                                 contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                        contentPadding = modeButtonPadding,
+                        modifier = if (isCompactLayout) {
+                            Modifier.defaultMinSize(minWidth = 60.dp)
+                        } else {
+                            Modifier
+                        }
                     ) {
                         Text(
                             text = label,
@@ -1039,35 +1108,41 @@ fun RadioScreen(
                     }
                 }
             }
+            Spacer(modifier = Modifier.height(toolRowSpacing))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(controlSpacing)
             ) {
                 CompactControlChip(
                     label = "MIN",
                     onClick = { viewModel.zoomMinSpectrum() },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    contentPadding = compactChipPadding
                 )
                 CompactControlChip(
                     label = "-",
                     onClick = { viewModel.zoomOutSpectrum() },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    contentPadding = compactChipPadding
                 )
                 CompactControlChip(
                     label = "+",
                     onClick = { viewModel.zoomInSpectrum() },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    contentPadding = compactChipPadding
                 )
                 CompactControlChip(
                     label = "MAX",
                     onClick = { viewModel.zoomMaxSpectrum() },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    contentPadding = compactChipPadding
                 )
                 CompactControlChip(
                     label = "C",
                     onClick = { viewModel.centerSpectrumOnTargetFrequency() },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    contentPadding = compactChipPadding
                 )
             }
 
@@ -1080,7 +1155,7 @@ fun RadioScreen(
                             width = 1.dp,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
                         )
-                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                        .padding(filterPanelPadding),
                     verticalArrangement = Arrangement.spacedBy(0.dp)
                 ) {
                     Text(
@@ -1105,8 +1180,8 @@ fun RadioScreen(
                         valueRange = 0f..4000f,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(20.dp)
-                            .graphicsLayer(scaleY = 0.48f)
+                            .height(sliderHeight)
+                            .graphicsLayer(scaleY = sliderScaleY)
                     )
                 }
             } else if (isCwMode) {
@@ -1118,7 +1193,7 @@ fun RadioScreen(
                             width = 1.dp,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
                         )
-                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                        .padding(filterPanelPadding),
                     verticalArrangement = Arrangement.spacedBy(0.dp)
                 ) {
                     Text(
@@ -1128,7 +1203,7 @@ fun RadioScreen(
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(controlSpacing),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Slider(
@@ -1149,8 +1224,8 @@ fun RadioScreen(
                             ),
                             modifier = Modifier
                                 .weight(1f)
-                                .height(20.dp)
-                                .graphicsLayer(scaleY = 0.48f)
+                                .height(sliderHeight)
+                                .graphicsLayer(scaleY = sliderScaleY)
                         )
                         Button(
                             onClick = {
@@ -1167,14 +1242,19 @@ fun RadioScreen(
                                 viewModel.tune(candidateHz)
                             },
                             enabled = validCwRfCandidateHz != null,
-                            contentPadding = ButtonDefaults.ContentPadding,
-                            modifier = Modifier.defaultMinSize(minWidth = 40.dp)
+                            contentPadding = if (isCompactLayout) {
+                                PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                            } else {
+                                ButtonDefaults.ContentPadding
+                            },
+                            modifier = Modifier.defaultMinSize(minWidth = if (isCompactLayout) 36.dp else 40.dp)
                         ) {
                             Text("A")
                         }
                     }
                 }
             }
+            Spacer(modifier = Modifier.height(toolRowSpacing))
         }
 
         RadioControls(
@@ -1182,20 +1262,26 @@ fun RadioScreen(
             audioMuted = uiState.audioMuted,
             onAudioVolumeChanged = { volume -> viewModel.setAudioVolume(volume) },
             onToggleMute = { viewModel.toggleMute() },
-            modifier = Modifier.padding(top = 2.dp)
+            compact = isCompactLayout,
+            modifier = Modifier
         )
+        Spacer(modifier = Modifier.height(toolRowSpacing))
 
         if (bandButtons.isNotEmpty()) {
+            val bandRowSpacing = when {
+                isCompactLayout -> 4.dp
+                isRoomyHeight -> 8.dp
+                else -> 6.dp
+            }
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 2.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                    .fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(bandRowSpacing)
             ) {
                 bandButtons.chunked(5).forEach { rowBands ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(bandRowSpacing)
                     ) {
                         rowBands.forEach { (shortLabel, band) ->
                             val isActive = uiState.frequencyHz in band.start..band.end
@@ -1203,7 +1289,8 @@ fun RadioScreen(
                                 label = shortLabel,
                                 onClick = { viewModel.selectBand(band.label) },
                                 modifier = Modifier.weight(1f),
-                                active = isActive
+                                active = isActive,
+                                contentPadding = compactChipPadding
                             )
                         }
                     }
@@ -1235,6 +1322,74 @@ fun RadioScreen(
                 }
             )
         }
+
+        if (showFrequencyEditDialog) {
+            AlertDialog(
+                onDismissRequest = {
+                    showFrequencyEditDialog = false
+                    keyboardController?.hide()
+                    focusManager.clearFocus()
+                },
+                confirmButton = {
+                    TextButton(onClick = { applyEditedFrequency() }) {
+                        Text("OK")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showFrequencyEditDialog = false
+                            keyboardController?.hide()
+                            focusManager.clearFocus()
+                        }
+                    ) {
+                        Text("Cancelar")
+                    }
+                },
+                title = { Text("Frecuencia") },
+                text = {
+                    TextField(
+                        value = frequencyEditText,
+                        onValueChange = { updatedValue ->
+                            val normalizedText = buildString {
+                                var separatorUsed = false
+                                updatedValue.text.forEach { char ->
+                                    when {
+                                        char.isDigit() -> append(char)
+                                        (char == '.' || char == ',') && !separatorUsed -> {
+                                            append('.')
+                                            separatorUsed = true
+                                        }
+                                    }
+                                }
+                            }
+                            val clampedSelection = updatedValue.selection.end.coerceIn(0, normalizedText.length)
+                            frequencyEditText = TextFieldValue(
+                                text = normalizedText,
+                                selection = TextRange(clampedSelection)
+                            )
+                        },
+                        modifier = Modifier.focusRequester(frequencyFocusRequester),
+                        singleLine = true,
+                        textStyle = TextStyle(
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.SemiBold
+                        ),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Decimal,
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = { applyEditedFrequency() }
+                        ),
+                        suffix = {
+                            Text("kHz")
+                        }
+                    )
+                }
+            )
+        }
+    }
     }
 }
 
@@ -1244,7 +1399,8 @@ private fun CompactControlChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     active: Boolean = false,
-    interactionSource: MutableInteractionSource? = null
+    interactionSource: MutableInteractionSource? = null,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
 ) {
     val resolvedInteractionSource = interactionSource ?: remember { MutableInteractionSource() }
     Box(
@@ -1258,7 +1414,7 @@ private fun CompactControlChip(
                 indication = LocalIndication.current,
                 onClick = onClick
             )
-            .padding(horizontal = 8.dp, vertical = 8.dp),
+            .padding(contentPadding),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -1282,6 +1438,80 @@ private fun roundFrequencyToStep(frequencyHz: Long, stepHz: Long): Long {
         return frequencyHz
     }
     return ((frequencyHz + (stepHz / 2L)) / stepHz) * stepHz
+}
+
+private fun formatFrequencyKhzSpanish(frequencyHz: Long): String {
+    return formatFrequencyKhzSpanishFromRawHzDigits(frequencyHz.toString())
+}
+
+private fun formatEditableFrequencyKhz(frequencyHz: Long): String {
+    val khz = frequencyHz / 1000L
+    val fractionalHz = (frequencyHz % 1000L).toString().padStart(3, '0')
+    return "$khz.$fractionalHz"
+}
+
+private fun parseEditableFrequencyKhzToHz(input: String): Long? {
+    val normalized = input
+        .trim()
+        .replace(',', '.')
+        .takeIf { it.isNotEmpty() }
+        ?: return null
+    val parts = normalized.split('.')
+    if (parts.size > 2) {
+        return null
+    }
+
+    val integerPart = parts[0].filter { it.isDigit() }.ifEmpty { "0" }
+    val fractionalPart = parts.getOrNull(1)
+        ?.filter { it.isDigit() }
+        ?.take(3)
+        ?.padEnd(3, '0')
+        ?: "000"
+
+    val khz = integerPart.toLongOrNull() ?: return null
+    val hzFraction = fractionalPart.toLongOrNull() ?: return null
+    return (khz * 1000L) + hzFraction
+}
+
+private fun formatFrequencyKhzSpanishFromRawHzDigits(rawHzDigits: String): String {
+    if (rawHzDigits.isEmpty()) {
+        return ""
+    }
+
+    val integerDigits = rawHzDigits.dropLast(3)
+    val fractionalDigits = rawHzDigits.takeLast(3).padStart(3, '0')
+    val integerPart = if (integerDigits.isEmpty()) {
+        "0"
+    } else {
+        formatSpanishThousands(integerDigits)
+    }
+
+    return "$integerPart,$fractionalDigits"
+}
+
+private fun formatSpanishThousands(digits: String): String {
+    if (digits.length <= 3) {
+        return digits
+    }
+
+    val firstGroupLength = digits.length % 3
+    val builder = StringBuilder()
+    var index = 0
+
+    if (firstGroupLength > 0) {
+        builder.append(digits.substring(0, firstGroupLength))
+        index = firstGroupLength
+    }
+
+    while (index < digits.length) {
+        if (builder.isNotEmpty()) {
+            builder.append('.')
+        }
+        builder.append(digits.substring(index, index + 3))
+        index += 3
+    }
+
+    return builder.toString()
 }
 
 private fun selectAxisMajorTickStepHz(

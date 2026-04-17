@@ -23,6 +23,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import es.niceto.ubersdr.ui.theme.CompactSurface
 import es.niceto.ubersdr.ui.theme.CompactTextSecondary
@@ -33,8 +35,16 @@ fun RadioControls(
     audioMuted: Boolean,
     onAudioVolumeChanged: (Float) -> Unit,
     onToggleMute: () -> Unit,
+    compact: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val rowHeight = if (compact) 30.dp else 34.dp
+    val iconButtonSize = if (compact) 28.dp else 32.dp
+    val iconSize = if (compact) 20.dp else 22.dp
+    val horizontalSpacing = if (compact) 6.dp else 8.dp
+    val sliderHeight = if (compact) 18.dp else 20.dp
+    val sliderScaleY = if (compact) 0.42f else 0.48f
+    val volumeWidth = if (compact) 42.dp else 48.dp
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(0.dp)
@@ -42,24 +52,24 @@ fun RadioControls(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(34.dp)
+                .height(rowHeight)
                 .background(CompactSurface)
                 .border(
                     width = 1.dp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
                 )
                 .padding(horizontal = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(horizontalSpacing),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(
                 onClick = onToggleMute,
-                modifier = Modifier.size(32.dp)
+                modifier = Modifier.size(iconButtonSize)
             ) {
                 Icon(
                     imageVector = SpeakerIcon,
                     contentDescription = if (audioMuted) "Muted" else "Volume",
-                    modifier = Modifier.size(22.dp),
+                    modifier = Modifier.size(iconSize),
                     tint = if (audioMuted) {
                         Color(0xFFE35B5B)
                     } else {
@@ -79,15 +89,19 @@ fun RadioControls(
                 ),
                 modifier = Modifier
                     .fillMaxWidth(0.72f)
-                    .height(20.dp)
-                    .graphicsLayer(scaleY = 0.48f)
+                    .height(sliderHeight)
+                    .graphicsLayer(scaleY = sliderScaleY)
             )
 
             Text(
                 text = "${(audioVolume * 100).toInt()}%",
                 style = MaterialTheme.typography.bodySmall,
                 color = CompactTextSecondary,
-                modifier = Modifier.width(44.dp)
+                modifier = Modifier.width(volumeWidth),
+                textAlign = TextAlign.End,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Clip
             )
         }
     }

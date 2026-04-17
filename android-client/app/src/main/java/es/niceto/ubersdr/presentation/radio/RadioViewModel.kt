@@ -42,6 +42,8 @@ class RadioViewModel(
     val uiState: StateFlow<RadioUiState> = _uiState.asStateFlow()
     private var maxObservedSpectrumBinBandwidthHz: Double? = null
     private var maxObservedSpectrumTotalBandwidthHz: Double? = null
+    private var pendingPersistedSpectrumCenterFreqHz: Long? = null
+    private var pendingPersistedSpectrumZoomBinBandwidthHz: Double? = null
 
     private val baseUrl = "https://ubersdr.niceto.es/"
 
@@ -139,6 +141,30 @@ class RadioViewModel(
                                 spectrumBinBandwidthHz = config.binBandwidthHz,
                                 spectrumTotalBandwidthHz = config.totalBandwidthHz
                             )
+
+                            val restoredZoomBinBandwidthHz = pendingPersistedSpectrumZoomBinBandwidthHz
+                            val restoreCenterFreqHz = pendingPersistedSpectrumCenterFreqHz
+                                ?.takeIf { it in MIN_VALID_SPECTRUM_FREQ_HZ..MAX_VALID_SPECTRUM_FREQ_HZ }
+                                ?: _uiState.value.frequencyHz.takeIf {
+                                    it in MIN_VALID_SPECTRUM_FREQ_HZ..MAX_VALID_SPECTRUM_FREQ_HZ
+                                }
+                            val maxZoomOutBinBandwidthHz = maxObservedSpectrumBinBandwidthHz
+                            if (
+                                restoredZoomBinBandwidthHz != null &&
+                                restoreCenterFreqHz != null &&
+                                maxZoomOutBinBandwidthHz != null &&
+                                restoredZoomBinBandwidthHz.isFinite() &&
+                                restoredZoomBinBandwidthHz >= 1.0 &&
+                                maxZoomOutBinBandwidthHz.isFinite() &&
+                                maxZoomOutBinBandwidthHz > 0.0
+                            ) {
+                                pendingPersistedSpectrumCenterFreqHz = null
+                                pendingPersistedSpectrumZoomBinBandwidthHz = null
+                                sessionRepository.sendSpectrumZoom(
+                                    centerFreqHz = restoreCenterFreqHz,
+                                    binBandwidthHz = restoredZoomBinBandwidthHz.coerceIn(1.0, maxZoomOutBinBandwidthHz)
+                                )
+                            }
                         }
 
                         override fun onSpecFrame(info: SpectrumWsClient.SpecFrameInfo) {
@@ -258,6 +284,9 @@ class RadioViewModel(
                         keepScreenOn = settings.keepScreenOn,
                         cwAutoTuneAveraging = settings.cwAutoTuneAveraging
                     )
+                    pendingPersistedSpectrumCenterFreqHz = settings.frequencyHz
+                        .takeIf { it in MIN_VALID_SPECTRUM_FREQ_HZ..MAX_VALID_SPECTRUM_FREQ_HZ }
+                    pendingPersistedSpectrumZoomBinBandwidthHz = settings.spectrumZoomBinBandwidthHz
                 }
                 .onFailure {
                     Log.w(TAG, "restorePersistedSettings() failed: ${it.message}")
@@ -456,6 +485,8 @@ class RadioViewModel(
         _uiState.value = _uiState.value.copy(
             statusText = "SPECTRUM ZOOM + cf=$targetCenterFreqHz binBw=$targetBinBandwidthHz"
         )
+
+        persistSpectrumZoom(targetBinBandwidthHz)
     }
 
     fun zoomMaxSpectrum() {
@@ -476,6 +507,8 @@ class RadioViewModel(
         _uiState.value = _uiState.value.copy(
             statusText = "SPECTRUM ZOOM MAX cf=$targetCenterFreqHz binBw=$targetBinBandwidthHz"
         )
+
+        persistSpectrumZoom(targetBinBandwidthHz)
     }
 
     fun zoomOutSpectrum() {
@@ -506,6 +539,8 @@ class RadioViewModel(
         _uiState.value = _uiState.value.copy(
             statusText = "SPECTRUM ZOOM - cf=$targetCenterFreqHz binBw=$targetBinBandwidthHz"
         )
+
+        persistSpectrumZoom(targetBinBandwidthHz)
     }
 
     fun zoomMinSpectrum() {
@@ -549,6 +584,8 @@ class RadioViewModel(
         _uiState.value = _uiState.value.copy(
             statusText = "SPECTRUM ZOOM MIN cf=$targetCenterFreqHz binBw=$maxBinBandwidthHz"
         )
+
+        persistSpectrumZoom(maxBinBandwidthHz)
     }
 
     fun panSpectrumTo(centerFreqHz: Long) {
@@ -676,8 +713,20 @@ class RadioViewModel(
             _uiState.value = _uiState.value.copy(
                 statusText = "SPECTRUM BAND cf=$centerFreqHz binBw=$targetBinBandwidthHz"
             )
+
+            persistSpectrumZoom(targetBinBandwidthHz)
         } else {
             centerSpectrumOnTargetFrequency()
+        }
+    }
+
+    private fun persistSpectrumZoom(binBandwidthHz: Double) {
+        val safeBinBandwidthHz = binBandwidthHz
+            .takeIf { it.isFinite() && it >= 1.0 }
+            ?: return
+
+        viewModelScope.launch {
+            settingsStore.saveSpectrumZoomBinBandwidthHz(safeBinBandwidthHz)
         }
     }
 

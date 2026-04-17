@@ -21,6 +21,7 @@ data class AppSettings(
     val frequencyHz: Long = DEFAULT_FREQUENCY_HZ,
     val mode: RadioMode = DEFAULT_MODE,
     val tuningStepHz: Long = DEFAULT_TUNING_STEP_HZ,
+    val spectrumZoomBinBandwidthHz: Double? = null,
     val audioVolume: Float = DEFAULT_AUDIO_VOLUME,
     val audioMuted: Boolean = DEFAULT_AUDIO_MUTED,
     val keepScreenOn: Boolean = DEFAULT_KEEP_SCREEN_ON,
@@ -40,6 +41,7 @@ class AppSettingsStore(private val context: Context) {
         val FREQUENCY_KEY = longPreferencesKey("frequency_hz")
         val MODE_KEY = stringPreferencesKey("mode")
         val TUNING_STEP_KEY = longPreferencesKey("tuning_step_hz")
+        val SPECTRUM_ZOOM_BIN_BANDWIDTH_KEY = stringPreferencesKey("spectrum_zoom_bin_bandwidth_hz")
         val AUDIO_VOLUME_KEY = floatPreferencesKey("audio_volume")
         val AUDIO_MUTED_KEY = booleanPreferencesKey("audio_muted")
         val KEEP_SCREEN_ON_KEY = booleanPreferencesKey("keep_screen_on")
@@ -62,6 +64,9 @@ class AppSettingsStore(private val context: Context) {
                 tuningStepHz = preferences[TUNING_STEP_KEY]
                     ?.takeIf { it in VALID_TUNING_STEPS }
                     ?: DEFAULT_TUNING_STEP_HZ,
+                spectrumZoomBinBandwidthHz = preferences[SPECTRUM_ZOOM_BIN_BANDWIDTH_KEY]
+                    ?.toDoubleOrNull()
+                    ?.takeIf { it.isFinite() && it >= 1.0 },
                 audioVolume = preferences[AUDIO_VOLUME_KEY]
                     ?.takeIf { it in 0f..1f }
                     ?: DEFAULT_AUDIO_VOLUME,
@@ -83,6 +88,12 @@ class AppSettingsStore(private val context: Context) {
 
     suspend fun saveTuningStep(stepHz: Long) {
         context.dataStore.edit { it[TUNING_STEP_KEY] = stepHz }
+    }
+
+    suspend fun saveSpectrumZoomBinBandwidthHz(binBandwidthHz: Double) {
+        context.dataStore.edit {
+            it[SPECTRUM_ZOOM_BIN_BANDWIDTH_KEY] = binBandwidthHz.toString()
+        }
     }
 
     suspend fun saveAudioVolume(volume: Float) {
