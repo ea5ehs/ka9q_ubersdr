@@ -4,7 +4,7 @@
 Confirmado en el cliente Android actual
 
 ## Última revisión
-2026-04-16
+2026-04-17
 
 ## 1. Objetivo
 
@@ -155,3 +155,15 @@ Elementos movidos al menú superior:
   - bandas
 - mover al menú lo no esencial de uso inmediato
 - evitar overlays o gestos complejos que degraden la usabilidad real
+
+## 10. Nota de versión `v0.61b`
+
+Cambios introducidos en cliente Android:
+
+- mejora de UI en pantallas pequeñas:
+  - reducción de problemas de altura por wrap de texto en botones
+  - ajuste de etiquetas compactas `CWU` y `CWL` para evitar salto de línea
+  - comportamiento más compacto y estable en dispositivos estrechos
+- mejora en sintonía:
+  - añadido `500 Hz` al selector de salto de frecuencia
+  - mejora de usabilidad para ajuste fino en `SSB`

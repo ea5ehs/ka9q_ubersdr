@@ -44,7 +44,7 @@ class AppSettingsStore(private val context: Context) {
         val AUDIO_MUTED_KEY = booleanPreferencesKey("audio_muted")
         val KEEP_SCREEN_ON_KEY = booleanPreferencesKey("keep_screen_on")
         val CW_AUTOTUNE_AVERAGING_KEY = intPreferencesKey("cw_autotune_averaging")
-        val VALID_TUNING_STEPS = setOf(10L, 100L, 1_000L, 5_000L, 10_000L)
+        val VALID_TUNING_STEPS = setOf(10L, 100L, 500L, 1_000L, 5_000L, 10_000L)
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data

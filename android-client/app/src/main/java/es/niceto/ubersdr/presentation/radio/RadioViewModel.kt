@@ -709,7 +709,7 @@ class RadioViewModel(
     }
 
     fun setTuningStep(stepHz: Long) {
-        val safeStepHz = stepHz.takeIf { it in listOf(10L, 100L, 1_000L, 5_000L, 10_000L) } ?: DEFAULT_TUNING_STEP_HZ
+        val safeStepHz = stepHz.takeIf { it in listOf(10L, 100L, 500L, 1_000L, 5_000L, 10_000L) } ?: DEFAULT_TUNING_STEP_HZ
         _uiState.value = _uiState.value.copy(
             tuningStepHz = safeStepHz
         )

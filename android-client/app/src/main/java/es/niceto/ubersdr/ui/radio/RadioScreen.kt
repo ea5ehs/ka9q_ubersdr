@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.DropdownMenu
@@ -71,8 +72,10 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -96,7 +99,7 @@ fun RadioScreen(
 ) {
     val minValidFrequencyHz = 10_000L
     val maxValidFrequencyHz = 30_000_000L
-    val tuningStepsHz = listOf(10L, 100L, 1_000L, 5_000L, 10_000L)
+    val tuningStepsHz = listOf(10L, 100L, 500L, 1_000L, 5_000L, 10_000L)
     var waterfallPalette by remember { mutableStateOf(WaterfallPalette.Jet) }
     val bandButtonOrder = listOf("160", "80", "60", "40", "30", "20", "17", "15", "12", "10")
     var waterfallVisible by remember { mutableStateOf(true) }
@@ -112,7 +115,9 @@ fun RadioScreen(
     var tappedFrequencyHz by remember { mutableStateOf<Long?>(null) }
     var hoverFrequencyHz by remember { mutableStateOf<Long?>(null) }
     var editingFrequency by remember { mutableStateOf(false) }
-    var editingFrequencyText by remember { mutableStateOf(uiState.frequencyHz.toString()) }
+    var editingFrequencyText by remember {
+        mutableStateOf(TextFieldValue(uiState.frequencyHz.toString()))
+    }
     val cwSpectrumBuffer = remember { mutableStateListOf<ByteArray>() }
     var cwSpectrumBufferKey by remember { mutableStateOf<CwSpectrumBufferKey?>(null) }
     val centerFreq = uiState.spectrumCenterFreqHz
@@ -243,12 +248,13 @@ fun RadioScreen(
     }
     val applyEditedFrequency = {
         val parsedFrequencyHz = editingFrequencyText
+            .text
             .filter { it.isDigit() }
             .takeIf { it.isNotBlank() }
             ?.toLongOrNull()
 
-        if (parsedFrequencyHz != null) {
-            viewModel.tune(parsedFrequencyHz.coerceIn(minValidFrequencyHz, maxValidFrequencyHz))
+        if (parsedFrequencyHz != null && parsedFrequencyHz in minValidFrequencyHz..maxValidFrequencyHz) {
+            viewModel.tune(parsedFrequencyHz)
             editingFrequency = false
             keyboardController?.hide()
             focusManager.clearFocus()
@@ -257,13 +263,17 @@ fun RadioScreen(
 
     LaunchedEffect(uiState.frequencyHz, editingFrequency) {
         if (!editingFrequency) {
-            editingFrequencyText = uiState.frequencyHz.toString()
+            editingFrequencyText = TextFieldValue(uiState.frequencyHz.toString())
         }
     }
 
     LaunchedEffect(editingFrequency) {
         if (editingFrequency) {
-            editingFrequencyText = uiState.frequencyHz.toString()
+            val currentText = uiState.frequencyHz.toString()
+            editingFrequencyText = TextFieldValue(
+                text = currentText,
+                selection = TextRange(0, currentText.length)
+            )
             frequencyFocusRequester.requestFocus()
             keyboardController?.show()
         }
@@ -591,7 +601,7 @@ fun RadioScreen(
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
-                                text = "UberSDR Android App v0.4",
+                                text = "UberSDR Android App beta 0.6",
                                 color = Color.White,
                                 style = MaterialTheme.typography.titleMedium,
                                 textAlign = TextAlign.Center
@@ -894,7 +904,12 @@ fun RadioScreen(
                             BasicTextField(
                                 value = editingFrequencyText,
                                 onValueChange = { updatedValue ->
-                                    editingFrequencyText = updatedValue.filter { it.isDigit() }
+                                    val filteredText = updatedValue.text.filter { it.isDigit() }
+                                    val clampedSelection = updatedValue.selection.end.coerceIn(0, filteredText.length)
+                                    editingFrequencyText = TextFieldValue(
+                                        text = filteredText,
+                                        selection = TextRange(clampedSelection)
+                                    )
                                 },
                                 modifier = Modifier
                                     .focusRequester(frequencyFocusRequester),
@@ -955,6 +970,7 @@ fun RadioScreen(
                         ) {
                             tuningStepsHz.forEach { step ->
                                 val stepLabel = when (step) {
+                                    500L -> "500"
                                     1_000L -> "1k"
                                     5_000L -> "5k"
                                     10_000L -> "10k"
@@ -1011,9 +1027,15 @@ fun RadioScreen(
                                 containerColor = MaterialTheme.colorScheme.surfaceVariant,
                                 contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                        }
+                        },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
                     ) {
-                        Text(label)
+                        Text(
+                            text = label,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
             }
@@ -1236,7 +1258,7 @@ private fun CompactControlChip(
                 indication = LocalIndication.current,
                 onClick = onClick
             )
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .padding(horizontal = 8.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -1249,7 +1271,8 @@ private fun CompactControlChip(
             },
             textAlign = TextAlign.Center,
             maxLines = 1,
-            softWrap = false
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
