@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import es.niceto.ubersdr.app.AppSettingsStore
 import es.niceto.ubersdr.app.DEFAULT_AUDIO_MUTED
 import es.niceto.ubersdr.app.DEFAULT_AUDIO_VOLUME
+import es.niceto.ubersdr.app.DEFAULT_CW_AUTOTUNE_AVERAGING
 import es.niceto.ubersdr.app.DEFAULT_FREQUENCY_HZ
 import es.niceto.ubersdr.app.DEFAULT_KEEP_SCREEN_ON
 import es.niceto.ubersdr.app.DEFAULT_MODE
@@ -254,7 +255,8 @@ class RadioViewModel(
                         audioVolume = settings.audioVolume,
                         audioMuted = settings.audioMuted,
                         tuningStepHz = settings.tuningStepHz,
-                        keepScreenOn = settings.keepScreenOn
+                        keepScreenOn = settings.keepScreenOn,
+                        cwAutoTuneAveraging = settings.cwAutoTuneAveraging
                     )
                 }
                 .onFailure {
@@ -727,6 +729,17 @@ class RadioViewModel(
         }
     }
 
+    fun setCwAutoTuneAveraging(averaging: Int) {
+        val safeAveraging = averaging.coerceIn(1, 10)
+        _uiState.value = _uiState.value.copy(
+            cwAutoTuneAveraging = safeAveraging
+        )
+
+        viewModelScope.launch {
+            settingsStore.saveCwAutoTuneAveraging(safeAveraging)
+        }
+    }
+
     fun resetPersistedSettings() {
         val defaultBandwidth = deriveBandwidthForMode(DEFAULT_MODE)
         sessionRepository.setAudioVolume(DEFAULT_AUDIO_VOLUME)
@@ -740,6 +753,7 @@ class RadioViewModel(
             audioMuted = DEFAULT_AUDIO_MUTED,
             tuningStepHz = DEFAULT_TUNING_STEP_HZ,
             keepScreenOn = DEFAULT_KEEP_SCREEN_ON,
+            cwAutoTuneAveraging = DEFAULT_CW_AUTOTUNE_AVERAGING,
             statusText = "Ajustes restablecidos"
         )
 

@@ -49,6 +49,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -83,7 +84,10 @@ import java.text.NumberFormat
 import java.util.Locale
 import kotlinx.coroutines.delay
 import kotlin.math.ceil
+import kotlin.math.roundToInt
 import kotlin.math.roundToLong
+
+private const val CW_SPEC_BUFFER_CAPACITY = 10
 
 @Composable
 fun RadioScreen(
@@ -109,6 +113,8 @@ fun RadioScreen(
     var hoverFrequencyHz by remember { mutableStateOf<Long?>(null) }
     var editingFrequency by remember { mutableStateOf(false) }
     var editingFrequencyText by remember { mutableStateOf(uiState.frequencyHz.toString()) }
+    val cwSpectrumBuffer = remember { mutableStateListOf<ByteArray>() }
+    var cwSpectrumBufferKey by remember { mutableStateOf<CwSpectrumBufferKey?>(null) }
     val centerFreq = uiState.spectrumCenterFreqHz
     val totalBandwidthHz = uiState.spectrumTotalBandwidthHz
     val spectrumStartFreq = if (centerFreq != null && totalBandwidthHz != null && totalBandwidthHz > 0.0) {
@@ -154,6 +160,33 @@ fun RadioScreen(
     val passbandHighFrequencyHz = uiState.frequencyHz + visualPassbandHighOffsetHz
     val passbandStartFrequencyHz = minOf(passbandLowFrequencyHz, passbandHighFrequencyHz).toDouble()
     val passbandEndFrequencyHz = maxOf(passbandLowFrequencyHz, passbandHighFrequencyHz).toDouble()
+    val accumulatedCwSpectrumRow = if (isCwMode) {
+        accumulateSpectrumRows(
+            visualSpectrumRows = cwSpectrumBuffer,
+            activeN = uiState.cwAutoTuneAveraging
+        )
+    } else {
+        null
+    }
+    val cwRfCandidate = if (isCwMode) {
+        findCwRfCandidate(
+            visualSpectrumRow = accumulatedCwSpectrumRow,
+            binCount = uiState.spectrumBinCount,
+            centerFreqHz = centerFreq,
+            totalBandwidthHz = totalBandwidthHz,
+            windowStartHz = passbandStartFrequencyHz,
+            windowEndHz = passbandEndFrequencyHz,
+            activeN = uiState.cwAutoTuneAveraging
+        )
+    } else {
+        null
+    }
+    val validCwRfCandidateHz = cwRfCandidate
+        ?.candidateFrequencyHz
+        ?.takeIf { candidateHz ->
+            candidateHz in minValidFrequencyHz..maxValidFrequencyHz &&
+                candidateHz.toDouble() in passbandStartFrequencyHz..passbandEndFrequencyHz
+        }
     val passbandStartRatio = if (spectrumStartFreq != null && spectrumEndFreq != null) {
         ((passbandStartFrequencyHz - spectrumStartFreq) / (spectrumEndFreq - spectrumStartFreq))
             .coerceIn(0.0, 1.0)
@@ -260,21 +293,51 @@ fun RadioScreen(
         }
     }
 
-    LaunchedEffect(uiState.latestSpectrumRow, uiState.spectrumBinCount) {
+    LaunchedEffect(
+        uiState.latestSpectrumRow,
+        uiState.spectrumBinCount,
+        uiState.spectrumCenterFreqHz,
+        uiState.spectrumTotalBandwidthHz
+    ) {
         val row = uiState.latestSpectrumRow
         val width = uiState.spectrumBinCount
+        val currentCenterFreq = uiState.spectrumCenterFreqHz
+        val currentTotalBandwidthHz = uiState.spectrumTotalBandwidthHz
 
-        if (row != null && width != null && width > 0 && row.size == width) {
+        if (
+            row != null &&
+            width != null &&
+            width > 0 &&
+            row.size == width &&
+            currentCenterFreq != null &&
+            currentTotalBandwidthHz != null &&
+            currentTotalBandwidthHz.isFinite() &&
+            currentTotalBandwidthHz > 0.0
+        ) {
             val height = 256
-            val halfWidth = width / 2
-            val unwrappedRow = ByteArray(width)
+            val visualSpectrumRow = unwrapSpectrumRow(
+                rawSpectrumRow = row,
+                binCount = width
+            ) ?: return@LaunchedEffect
+            val currentBufferKey = CwSpectrumBufferKey(
+                binCount = width,
+                centerFreqHz = currentCenterFreq,
+                totalBandwidthHz = currentTotalBandwidthHz
+            )
+
+            if (cwSpectrumBufferKey != currentBufferKey) {
+                cwSpectrumBuffer.clear()
+                cwSpectrumBufferKey = currentBufferKey
+            }
+            cwSpectrumBuffer.add(visualSpectrumRow)
+            while (cwSpectrumBuffer.size > CW_SPEC_BUFFER_CAPACITY) {
+                cwSpectrumBuffer.removeAt(0)
+            }
+
             var rowMin = 255
             var rowMax = 0
-
             for (x in 0 until width) {
-                val unwrappedIndex = (x + halfWidth) % width
-                val value = row[unwrappedIndex]
-                unwrappedRow[x] = value
+                val value = visualSpectrumRow[x]
                 val normalized = value.toInt() and 0xFF
                 if (normalized < rowMin) {
                     rowMin = normalized
@@ -303,7 +366,7 @@ fun RadioScreen(
             }
 
             for (x in 0 until width) {
-                val rawValue = unwrappedRow[x].toInt() and 0xFF
+                val rawValue = visualSpectrumRow[x].toInt() and 0xFF
                 val normalizedValue = if (rowRange > 0) {
                     ((rawValue - rowMin) * 255) / rowRange
                 } else {
@@ -380,6 +443,50 @@ fun RadioScreen(
                     )
                     Text(
                         text = "Selected: $selectedFrequencyText Hz | Tapped: ${tappedFrequencyHz ?: "-"} | Hover: ${hoverFrequencyHz ?: "-"}",
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        text = "CW SPEC N: ${uiState.cwAutoTuneAveraging} | Buffer: ${cwSpectrumBuffer.size}/$CW_SPEC_BUFFER_CAPACITY",
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        text = "Ajustes avanzados",
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    Text(
+                        text = "CW AutoTune Averaging",
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Slider(
+                        value = uiState.cwAutoTuneAveraging.toFloat(),
+                        onValueChange = { updatedN ->
+                            viewModel.setCwAutoTuneAveraging(
+                                updatedN.roundToInt().coerceIn(1, CW_SPEC_BUFFER_CAPACITY)
+                            )
+                        },
+                        valueRange = 1f..CW_SPEC_BUFFER_CAPACITY.toFloat(),
+                        steps = CW_SPEC_BUFFER_CAPACITY - 2,
+                        colors = SliderDefaults.colors(
+                            thumbColor = MaterialTheme.colorScheme.primary,
+                            activeTrackColor = MaterialTheme.colorScheme.primary,
+                            inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                        ),
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp)
+                            .fillMaxWidth()
+                            .height(20.dp)
+                            .graphicsLayer(scaleY = 0.48f)
+                    )
+                    Text(
+                        text = if (cwRfCandidate != null) {
+                            "CW Lab: N=${cwRfCandidate.activeN} | ${cwRfCandidate.candidateFrequencyHz} Hz | peak ${cwRfCandidate.peakBin} | value ${cwRfCandidate.peakValue} | bins ${cwRfCandidate.startBin}-${cwRfCandidate.endBin}"
+                        } else {
+                            "CW Lab: -"
+                        },
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -997,27 +1104,53 @@ fun RadioScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Slider(
-                        value = cwWidthHz.toFloat(),
-                        onValueChange = { updatedWidth ->
-                            val snappedWidthHz = ((updatedWidth / 100f).roundToLong() * 100L)
-                                .coerceIn(100L, 1000L)
-                                .toInt()
-                            val halfWidthHz = snappedWidthHz / 2
-                            viewModel.changeFilter(-halfWidthHz, halfWidthHz)
-                        },
-                        valueRange = 100f..1000f,
-                        steps = 8,
-                        colors = SliderDefaults.colors(
-                            thumbColor = MaterialTheme.colorScheme.primary,
-                            activeTrackColor = MaterialTheme.colorScheme.primary,
-                            inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(20.dp)
-                            .graphicsLayer(scaleY = 0.48f)
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Slider(
+                            value = cwWidthHz.toFloat(),
+                            onValueChange = { updatedWidth ->
+                                val snappedWidthHz = ((updatedWidth / 100f).roundToLong() * 100L)
+                                    .coerceIn(100L, 1000L)
+                                    .toInt()
+                                val halfWidthHz = snappedWidthHz / 2
+                                viewModel.changeFilter(-halfWidthHz, halfWidthHz)
+                            },
+                            valueRange = 100f..1000f,
+                            steps = 8,
+                            colors = SliderDefaults.colors(
+                                thumbColor = MaterialTheme.colorScheme.primary,
+                                activeTrackColor = MaterialTheme.colorScheme.primary,
+                                inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                            ),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(20.dp)
+                                .graphicsLayer(scaleY = 0.48f)
+                        )
+                        Button(
+                            onClick = {
+                                val candidateHz = validCwRfCandidateHz ?: return@Button
+                                val binBandwidthHz = uiState.spectrumBinBandwidthHz
+                                if (
+                                    binBandwidthHz != null &&
+                                    binBandwidthHz.isFinite() &&
+                                    binBandwidthHz > 0.0 &&
+                                    kotlin.math.abs(candidateHz - uiState.frequencyHz) < binBandwidthHz
+                                ) {
+                                    return@Button
+                                }
+                                viewModel.tune(candidateHz)
+                            },
+                            enabled = validCwRfCandidateHz != null,
+                            contentPadding = ButtonDefaults.ContentPadding,
+                            modifier = Modifier.defaultMinSize(minWidth = 40.dp)
+                        ) {
+                            Text("A")
+                        }
+                    }
                 }
             }
         }
@@ -1203,6 +1336,135 @@ private fun formatAxisTickLabel(
         frequencyHz >= 1_000_000.0 -> String.format(Locale.US, "%.${decimalsInMHz}fM", frequencyHz / 1_000_000.0)
         frequencyHz >= 1_000.0 -> String.format(Locale.US, "%.0fk", frequencyHz / 1_000.0)
         else -> String.format(Locale.US, "%.0f", frequencyHz)
+    }
+}
+
+private data class CwRfCandidate(
+    val activeN: Int,
+    val startBin: Int,
+    val endBin: Int,
+    val peakBin: Int,
+    val peakValue: Int,
+    val candidateFrequencyHz: Long
+)
+
+private data class CwSpectrumBufferKey(
+    val binCount: Int,
+    val centerFreqHz: Long,
+    val totalBandwidthHz: Double
+)
+
+private fun findCwRfCandidate(
+    visualSpectrumRow: ByteArray?,
+    binCount: Int?,
+    centerFreqHz: Long?,
+    totalBandwidthHz: Double?,
+    windowStartHz: Double,
+    windowEndHz: Double,
+    activeN: Int
+): CwRfCandidate? {
+    if (
+        visualSpectrumRow == null ||
+        binCount == null ||
+        centerFreqHz == null ||
+        totalBandwidthHz == null ||
+        binCount <= 0 ||
+        visualSpectrumRow.size != binCount ||
+        !totalBandwidthHz.isFinite() ||
+        totalBandwidthHz <= 0.0
+    ) {
+        return null
+    }
+
+    val startFreqHz = centerFreqHz.toDouble() - totalBandwidthHz / 2.0
+    val clampedWindowStartHz = windowStartHz.coerceAtLeast(startFreqHz)
+    val clampedWindowEndHz = windowEndHz.coerceAtMost(startFreqHz + totalBandwidthHz)
+    if (!clampedWindowStartHz.isFinite() || !clampedWindowEndHz.isFinite() || clampedWindowEndHz <= clampedWindowStartHz) {
+        return null
+    }
+
+    val startRatio = ((clampedWindowStartHz - startFreqHz) / totalBandwidthHz).coerceIn(0.0, 1.0)
+    val endRatio = ((clampedWindowEndHz - startFreqHz) / totalBandwidthHz).coerceIn(0.0, 1.0)
+    var startBin = (startRatio * binCount).toInt().coerceIn(0, binCount - 1)
+    var endBin = (endRatio * binCount).toInt().coerceIn(0, binCount - 1)
+    if (startBin > endBin) {
+        val swap = startBin
+        startBin = endBin
+        endBin = swap
+    }
+
+    var peakBin = startBin
+    var peakValue = -1
+    for (visualBin in startBin..endBin) {
+        val value = visualSpectrumRow[visualBin].toInt() and 0xFF
+        if (value > peakValue) {
+            peakValue = value
+            peakBin = visualBin
+        }
+    }
+
+    if (peakValue < 0) {
+        return null
+    }
+
+    val candidateFrequencyHz =
+        (startFreqHz + (peakBin.toDouble() / binCount.toDouble()) * totalBandwidthHz).roundToLong()
+
+    return CwRfCandidate(
+        activeN = activeN,
+        startBin = startBin,
+        endBin = endBin,
+        peakBin = peakBin,
+        peakValue = peakValue,
+        candidateFrequencyHz = candidateFrequencyHz
+    )
+}
+
+private fun unwrapSpectrumRow(
+    rawSpectrumRow: ByteArray,
+    binCount: Int
+): ByteArray? {
+    if (binCount <= 0 || rawSpectrumRow.size != binCount) {
+        return null
+    }
+
+    val halfWidth = binCount / 2
+    val visualSpectrumRow = ByteArray(binCount)
+    for (x in 0 until binCount) {
+        val unwrappedIndex = (x + halfWidth) % binCount
+        visualSpectrumRow[x] = rawSpectrumRow[unwrappedIndex]
+    }
+    return visualSpectrumRow
+}
+
+private fun accumulateSpectrumRows(
+    visualSpectrumRows: List<ByteArray>,
+    activeN: Int
+): ByteArray? {
+    val effectiveN = activeN.coerceIn(1, CW_SPEC_BUFFER_CAPACITY)
+    if (visualSpectrumRows.isEmpty()) {
+        return null
+    }
+
+    val rowsToUse = visualSpectrumRows.takeLast(effectiveN)
+    if (rowsToUse.isEmpty()) {
+        return null
+    }
+
+    val binCount = rowsToUse.first().size
+    if (binCount <= 0 || rowsToUse.any { it.size != binCount }) {
+        return null
+    }
+
+    val sums = IntArray(binCount)
+    rowsToUse.forEach { row ->
+        for (index in 0 until binCount) {
+            sums[index] += row[index].toInt() and 0xFF
+        }
+    }
+
+    return ByteArray(binCount) { index ->
+        (sums[index] / rowsToUse.size).toByte()
     }
 }
 

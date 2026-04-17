@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -22,7 +23,8 @@ data class AppSettings(
     val tuningStepHz: Long = DEFAULT_TUNING_STEP_HZ,
     val audioVolume: Float = DEFAULT_AUDIO_VOLUME,
     val audioMuted: Boolean = DEFAULT_AUDIO_MUTED,
-    val keepScreenOn: Boolean = DEFAULT_KEEP_SCREEN_ON
+    val keepScreenOn: Boolean = DEFAULT_KEEP_SCREEN_ON,
+    val cwAutoTuneAveraging: Int = DEFAULT_CW_AUTOTUNE_AVERAGING
 )
 
 const val DEFAULT_FREQUENCY_HZ = 14_175_000L
@@ -31,6 +33,7 @@ const val DEFAULT_TUNING_STEP_HZ = 1_000L
 const val DEFAULT_AUDIO_VOLUME = 1f
 const val DEFAULT_AUDIO_MUTED = false
 const val DEFAULT_KEEP_SCREEN_ON = false
+const val DEFAULT_CW_AUTOTUNE_AVERAGING = 6
 
 class AppSettingsStore(private val context: Context) {
     private companion object {
@@ -40,6 +43,7 @@ class AppSettingsStore(private val context: Context) {
         val AUDIO_VOLUME_KEY = floatPreferencesKey("audio_volume")
         val AUDIO_MUTED_KEY = booleanPreferencesKey("audio_muted")
         val KEEP_SCREEN_ON_KEY = booleanPreferencesKey("keep_screen_on")
+        val CW_AUTOTUNE_AVERAGING_KEY = intPreferencesKey("cw_autotune_averaging")
         val VALID_TUNING_STEPS = setOf(10L, 100L, 1_000L, 5_000L, 10_000L)
     }
 
@@ -62,7 +66,10 @@ class AppSettingsStore(private val context: Context) {
                     ?.takeIf { it in 0f..1f }
                     ?: DEFAULT_AUDIO_VOLUME,
                 audioMuted = preferences[AUDIO_MUTED_KEY] ?: DEFAULT_AUDIO_MUTED,
-                keepScreenOn = preferences[KEEP_SCREEN_ON_KEY] ?: DEFAULT_KEEP_SCREEN_ON
+                keepScreenOn = preferences[KEEP_SCREEN_ON_KEY] ?: DEFAULT_KEEP_SCREEN_ON,
+                cwAutoTuneAveraging = preferences[CW_AUTOTUNE_AVERAGING_KEY]
+                    ?.takeIf { it in 1..10 }
+                    ?: DEFAULT_CW_AUTOTUNE_AVERAGING
             )
         }
 
@@ -88,6 +95,12 @@ class AppSettingsStore(private val context: Context) {
 
     suspend fun saveKeepScreenOn(enabled: Boolean) {
         context.dataStore.edit { it[KEEP_SCREEN_ON_KEY] = enabled }
+    }
+
+    suspend fun saveCwAutoTuneAveraging(averaging: Int) {
+        context.dataStore.edit {
+            it[CW_AUTOTUNE_AVERAGING_KEY] = averaging.coerceIn(1, 10)
+        }
     }
 
     suspend fun clear() {

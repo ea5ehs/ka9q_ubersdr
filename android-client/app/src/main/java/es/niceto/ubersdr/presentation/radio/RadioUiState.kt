@@ -14,6 +14,7 @@ data class RadioUiState(
     val audioMuted: Boolean = false,
     val tuningStepHz: Long = 1_000L,
     val keepScreenOn: Boolean = false,
+    val cwAutoTuneAveraging: Int = 6,
     val spectrumCenterFreqHz: Long? = null,
     val spectrumBinCount: Int? = null,
     val spectrumBinBandwidthHz: Double? = null,
