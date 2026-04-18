@@ -1,5 +1,6 @@
 package es.niceto.ubersdr.presentation.radio
 
+import es.niceto.ubersdr.data.instances.PublicInstance
 import es.niceto.ubersdr.data.network.dto.BandDto
 import es.niceto.ubersdr.model.RadioMode
 
@@ -28,5 +29,7 @@ data class RadioUiState(
     val specBufferSize: Int? = null,
     val specBufferMatchesBinCount: Boolean = false,
     val latestSpectrumRow: ByteArray? = null,
+    val publicInstancesLoading: Boolean = false,
+    val publicInstances: List<PublicInstance> = emptyList(),
     val availableBands: List<BandDto> = emptyList()
 )

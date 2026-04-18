@@ -12,6 +12,7 @@ import es.niceto.ubersdr.app.DEFAULT_KEEP_SCREEN_ON
 import es.niceto.ubersdr.app.DEFAULT_MODE
 import es.niceto.ubersdr.app.DEFAULT_SERVER_URL
 import es.niceto.ubersdr.app.DEFAULT_TUNING_STEP_HZ
+import es.niceto.ubersdr.data.instances.InstanceDirectoryRepository
 import es.niceto.ubersdr.data.network.dto.BandDto
 import es.niceto.ubersdr.data.websocket.AudioWsClient
 import es.niceto.ubersdr.data.websocket.SpectrumWsClient
@@ -26,7 +27,8 @@ import kotlinx.coroutines.launch
 
 class RadioViewModel(
     private val sessionRepository: SessionRepository,
-    private val settingsStore: AppSettingsStore
+    private val settingsStore: AppSettingsStore,
+    private val instanceDirectoryRepository: InstanceDirectoryRepository? = null
 ) : ViewModel() {
     private companion object {
         const val TAG = "UberSDR-RadioVM"
@@ -832,17 +834,47 @@ class RadioViewModel(
     }
 
     fun applyServerUrl(serverUrl: String) {
+        applyServerUrlInternal(serverUrl, reconnect = false)
+    }
+
+    fun switchServerUrl(serverUrl: String) {
+        applyServerUrlInternal(serverUrl, reconnect = true)
+    }
+
+    fun restoreDefaultServerUrl() {
+        applyServerUrlInternal(DEFAULT_SERVER_URL, reconnect = true)
+    }
+
+    private fun applyServerUrlInternal(serverUrl: String, reconnect: Boolean) {
         val normalizedServerUrl = normalizeServerUrl(serverUrl)
         val previousConfiguredServerUrl = _uiState.value.serverUrl
-        val wasConnected = _uiState.value.isConnected
-        if (normalizedServerUrl == previousConfiguredServerUrl) {
+        val shouldReconnect = reconnect || _uiState.value.isConnected
+        if (normalizedServerUrl == previousConfiguredServerUrl && !shouldReconnect) {
             return
+        }
+
+        if (_uiState.value.isConnected) {
+            sessionRepository.disconnect()
         }
 
         baseUrl = normalizedServerUrl
         _uiState.value = _uiState.value.copy(
             serverUrl = normalizedServerUrl,
-            statusText = if (wasConnected) "Servidor actualizado, reconectando..." else "Servidor actualizado"
+            connectedServerUrl = null,
+            isConnected = false,
+            statusText = if (shouldReconnect) "Servidor actualizado, reconectando..." else "Servidor actualizado",
+            spectrumCenterFreqHz = null,
+            spectrumBinCount = null,
+            spectrumBinBandwidthHz = null,
+            spectrumTotalBandwidthHz = null,
+            lastSpecFrameSize = null,
+            lastSpecPayloadSize = null,
+            specFramesReceived = 0L,
+            specLastFlags = null,
+            specBufferSize = null,
+            specBufferMatchesBinCount = false,
+            latestSpectrumRow = null,
+            availableBands = emptyList()
         )
 
         viewModelScope.launch {
@@ -851,9 +883,41 @@ class RadioViewModel(
 
         loadBands()
 
-        if (wasConnected) {
-            disconnect()
+        if (shouldReconnect) {
             connect()
+        }
+    }
+
+    fun loadPublicInstances() {
+        if (_uiState.value.publicInstancesLoading) {
+            return
+        }
+
+        _uiState.value = _uiState.value.copy(
+            publicInstancesLoading = true
+        )
+
+        viewModelScope.launch {
+            val instances = try {
+                instanceDirectoryRepository?.getOnlineInstances().orEmpty()
+            } catch (e: Exception) {
+                Log.w(TAG, "loadPublicInstances() failed", e)
+                _uiState.value = _uiState.value.copy(
+                    publicInstancesLoading = false,
+                    statusText = "Directorio de instancias no disponible"
+                )
+                return@launch
+            }
+
+            _uiState.value = _uiState.value.copy(
+                publicInstancesLoading = false,
+                publicInstances = instances,
+                statusText = if (instances.isEmpty()) {
+                    "No hay instancias publicas disponibles"
+                } else {
+                    "Directorio cargado: ${instances.size} instancias"
+                }
+            )
         }
     }
 

@@ -4,7 +4,7 @@
 Confirmado en el cliente Android actual
 
 ## Última revisión
-2026-04-17
+2026-04-18
 
 ## 1. Objetivo
 
@@ -169,3 +169,25 @@ Cambios introducidos en cliente Android:
 - mejora en sintonía:
   - añadido `500 Hz` al selector de salto de frecuencia
   - mejora de usabilidad para ajuste fino en `SSB`
+
+## 11. Integración multi-servidor
+
+El cliente Android actual soporta selección de servidor en la barra superior:
+
+- campo URL editable en cabecera
+- persistencia del último servidor configurado
+- separación entre URL configurada y URL conectada
+- cambio real de servidor con reinicio de sesión y reconexión controlada
+- acción visible para volver al servidor por defecto `https://ubersdr.niceto.es/`
+
+La integración con el directorio público usa:
+
+- endpoint ligero `https://instances.ubersdr.org/api/instances?online_only=true`
+- `public_url` como endpoint seleccionable para el cliente
+- selector simple en la propia barra superior
+
+Decisiones técnicas:
+
+- no usar scraping HTML
+- mapear el directorio a un modelo mínimo propio en cliente Android
+- mantener separada la capa de datos del directorio (`InstanceDirectoryRepository`) de la UI que presenta la selección

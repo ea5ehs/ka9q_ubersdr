@@ -4,6 +4,7 @@ import es.niceto.ubersdr.data.network.dto.ConnectionRequestDto
 import es.niceto.ubersdr.data.network.dto.ConnectionResponseDto
 import es.niceto.ubersdr.data.network.dto.DescriptionResponseDto
 import es.niceto.ubersdr.data.network.dto.BandDto
+import es.niceto.ubersdr.data.network.dto.InstanceDirectoryResponseDto
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
@@ -21,4 +22,7 @@ interface ConnectionApi {
 
     @GET
     suspend fun getBands(@Url url: String): List<BandDto>
+
+    @GET
+    suspend fun getInstances(@Url url: String): InstanceDirectoryResponseDto
 }

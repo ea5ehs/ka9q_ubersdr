@@ -2,6 +2,8 @@ package es.niceto.ubersdr.ui.radio
 
 import android.graphics.Bitmap
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -113,6 +115,7 @@ fun RadioScreen(
     var waterfallVisible by remember { mutableStateOf(true) }
     var topMenuExpanded by remember { mutableStateOf(false) }
     var tuningStepMenuExpanded by remember { mutableStateOf(false) }
+    var serverSelectorExpanded by remember { mutableStateOf(false) }
     var showResetSettingsDialog by remember { mutableStateOf(false) }
     val uiState by viewModel.uiState.collectAsState()
     val view = LocalView.current
@@ -645,25 +648,120 @@ fun RadioScreen(
                     .border(1.dp, Color.White.copy(alpha = 0.16f)),
                 contentAlignment = Alignment.CenterStart
             ) {
-                BasicTextField(
-                    value = serverUrlInput,
-                    onValueChange = { serverUrlInput = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp),
-                    textStyle = TextStyle(
-                        color = Color.White.copy(alpha = 0.92f),
-                        fontSize = MaterialTheme.typography.bodySmall.fontSize
-                    ),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Uri,
-                        imeAction = ImeAction.Done
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onDone = { viewModel.applyServerUrl(serverUrlInput) }
-                    ),
-                    cursorBrush = SolidColor(Color.White)
+                Row(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    BasicTextField(
+                        value = serverUrlInput,
+                        onValueChange = { serverUrlInput = it },
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(start = 8.dp, end = 4.dp),
+                        textStyle = TextStyle(
+                            color = Color.White.copy(alpha = 0.92f),
+                            fontSize = MaterialTheme.typography.bodySmall.fontSize
+                        ),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Uri,
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = { viewModel.applyServerUrl(serverUrlInput) }
+                        ),
+                        cursorBrush = SolidColor(Color.White)
+                    )
+
+                    IconButton(
+                        onClick = {
+                            serverSelectorExpanded = true
+                            viewModel.loadPublicInstances()
+                        },
+                        modifier = Modifier.height(if (isCompactLayout) 22.dp else 24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.ArrowDropDown,
+                            contentDescription = "Seleccionar servidor",
+                            tint = Color.White.copy(alpha = 0.82f)
+                        )
+                    }
+                }
+
+                DropdownMenu(
+                    expanded = serverSelectorExpanded,
+                    onDismissRequest = { serverSelectorExpanded = false }
+                ) {
+                    if (uiState.publicInstancesLoading) {
+                        DropdownMenuItem(
+                            text = { Text("Cargando instancias...") },
+                            onClick = {},
+                            enabled = false
+                        )
+                    } else if (uiState.publicInstances.isEmpty()) {
+                        DropdownMenuItem(
+                            text = { Text("No hay instancias disponibles") },
+                            onClick = {},
+                            enabled = false
+                        )
+                    } else {
+                        uiState.publicInstances.forEach { instance ->
+                            val subtitle = buildString {
+                                val place = instance.countryName ?: instance.location
+                                if (!place.isNullOrBlank()) {
+                                    append(place)
+                                }
+                                if (instance.availableClients != null && instance.maxClients != null) {
+                                    if (isNotEmpty()) append(" • ")
+                                    append("${instance.availableClients}/${instance.maxClients} slots")
+                                }
+                                val feature = instance.features.firstOrNull()
+                                if (!feature.isNullOrBlank()) {
+                                    if (isNotEmpty()) append(" • ")
+                                    append(feature)
+                                }
+                            }
+
+                            DropdownMenuItem(
+                                text = {
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text(
+                                            text = instance.label,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        if (subtitle.isNotBlank()) {
+                                            Text(
+                                                text = subtitle,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
+                                },
+                                onClick = {
+                                    serverUrlInput = instance.publicUrl
+                                    viewModel.switchServerUrl(instance.publicUrl)
+                                    serverSelectorExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            IconButton(
+                onClick = {
+                    serverUrlInput = "https://ubersdr.niceto.es/"
+                    viewModel.restoreDefaultServerUrl()
+                },
+                modifier = Modifier.height(powerButtonHeight)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Home,
+                    contentDescription = "Servidor por defecto",
+                    tint = Color.White.copy(alpha = 0.88f)
                 )
             }
 
