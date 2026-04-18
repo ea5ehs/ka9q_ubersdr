@@ -377,9 +377,11 @@ class RadioViewModel(
     }
 
     fun tune(frequencyHz: Long) {
+        val targetSpectrumCenterFreqHz = deriveSpectrumCenterToEnsureVisible(frequencyHz)
         val bandwidth = deriveBandwidthForMode(_uiState.value.mode)
         _uiState.value = _uiState.value.copy(
             frequencyHz = frequencyHz,
+            spectrumCenterFreqHz = targetSpectrumCenterFreqHz ?: _uiState.value.spectrumCenterFreqHz,
             bandwidthLowHz = bandwidth.lowHz,
             bandwidthHighHz = bandwidth.highHz,
             statusText = "Tune requested"
@@ -403,8 +405,39 @@ class RadioViewModel(
             }
         }
 
+        if (targetSpectrumCenterFreqHz != null) {
+            sessionRepository.sendSpectrumPan(
+                centerFreqHz = targetSpectrumCenterFreqHz
+            )
+        }
+
         viewModelScope.launch {
             settingsStore.saveFrequency(frequencyHz)
+        }
+    }
+
+    private fun deriveSpectrumCenterToEnsureVisible(targetFrequencyHz: Long): Long? {
+        val currentCenterFreqHz = _uiState.value.spectrumCenterFreqHz ?: return null
+        val totalBandwidthHz = _uiState.value.spectrumTotalBandwidthHz
+            ?.takeIf { it.isFinite() && it > 0.0 }
+            ?: return null
+        val halfSpanHz = totalBandwidthHz / 2.0
+        val visibleStartHz = currentCenterFreqHz.toDouble() - halfSpanHz
+        val visibleEndHz = currentCenterFreqHz.toDouble() + halfSpanHz
+
+        if (targetFrequencyHz.toDouble() in visibleStartHz..visibleEndHz) {
+            return null
+        }
+
+        val minCenterHz = MIN_VALID_SPECTRUM_FREQ_HZ.toDouble() + halfSpanHz
+        val maxCenterHz = MAX_VALID_SPECTRUM_FREQ_HZ.toDouble() - halfSpanHz
+
+        return if (minCenterHz <= maxCenterHz) {
+            targetFrequencyHz.toDouble()
+                .coerceIn(minCenterHz, maxCenterHz)
+                .toLong()
+        } else {
+            ((MIN_VALID_SPECTRUM_FREQ_HZ + MAX_VALID_SPECTRUM_FREQ_HZ) / 2L)
         }
     }
 
