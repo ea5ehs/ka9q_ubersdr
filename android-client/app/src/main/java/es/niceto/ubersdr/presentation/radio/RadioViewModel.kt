@@ -10,6 +10,7 @@ import es.niceto.ubersdr.app.DEFAULT_CW_AUTOTUNE_AVERAGING
 import es.niceto.ubersdr.app.DEFAULT_FREQUENCY_HZ
 import es.niceto.ubersdr.app.DEFAULT_KEEP_SCREEN_ON
 import es.niceto.ubersdr.app.DEFAULT_MODE
+import es.niceto.ubersdr.app.DEFAULT_SERVER_URL
 import es.niceto.ubersdr.app.DEFAULT_TUNING_STEP_HZ
 import es.niceto.ubersdr.data.network.dto.BandDto
 import es.niceto.ubersdr.data.websocket.AudioWsClient
@@ -45,7 +46,7 @@ class RadioViewModel(
     private var pendingPersistedSpectrumCenterFreqHz: Long? = null
     private var pendingPersistedSpectrumZoomBinBandwidthHz: Double? = null
 
-    private val baseUrl = "https://ubersdr.niceto.es/"
+    private var baseUrl = DEFAULT_SERVER_URL
 
     init {
         loadBands()
@@ -216,6 +217,7 @@ class RadioViewModel(
             Log.w(TAG, "audioListener.onFailure: $message")
             _uiState.value = _uiState.value.copy(
                 isConnected = false,
+                connectedServerUrl = null,
                 statusText = "AUDIO WS ERROR: $message"
             )
         }
@@ -224,6 +226,7 @@ class RadioViewModel(
             Log.d(TAG, "audioListener.onClosed")
             _uiState.value = _uiState.value.copy(
                 isConnected = false,
+                connectedServerUrl = null,
                 statusText = "AUDIO WS CLOSED"
             )
         }
@@ -257,7 +260,8 @@ class RadioViewModel(
 
     private fun loadBands() {
         viewModelScope.launch {
-            runCatching { sessionRepository.getBands() }
+            val currentBaseUrl = _uiState.value.serverUrl
+            runCatching { sessionRepository.getBands(currentBaseUrl) }
                 .onSuccess { bands ->
                     _uiState.value = _uiState.value.copy(
                         availableBands = bands
@@ -271,9 +275,11 @@ class RadioViewModel(
             runCatching { settingsStore.settings.first() }
                 .onSuccess { settings ->
                     val restoredBandwidth = deriveBandwidthForMode(settings.mode)
+                    baseUrl = normalizeServerUrl(settings.serverUrl)
                     sessionRepository.setAudioVolume(settings.audioVolume)
                     sessionRepository.setAudioMuted(settings.audioMuted)
                     _uiState.value = _uiState.value.copy(
+                        serverUrl = baseUrl,
                         frequencyHz = settings.frequencyHz,
                         mode = settings.mode,
                         bandwidthLowHz = restoredBandwidth.lowHz,
@@ -287,6 +293,7 @@ class RadioViewModel(
                     pendingPersistedSpectrumCenterFreqHz = settings.frequencyHz
                         .takeIf { it in MIN_VALID_SPECTRUM_FREQ_HZ..MAX_VALID_SPECTRUM_FREQ_HZ }
                     pendingPersistedSpectrumZoomBinBandwidthHz = settings.spectrumZoomBinBandwidthHz
+                    loadBands()
                 }
                 .onFailure {
                     Log.w(TAG, "restorePersistedSettings() failed: ${it.message}")
@@ -317,7 +324,7 @@ class RadioViewModel(
         )
 
         viewModelScope.launch {
-            val result = sessionRepository.bootstrapSession()
+            val result = sessionRepository.bootstrapSession(baseUrl)
 
             if (!result.allowed) {
                 Log.w(TAG, "connect() rejected reason=${result.reason}")
@@ -337,6 +344,7 @@ class RadioViewModel(
 
             _uiState.value = _uiState.value.copy(
                 isConnected = true,
+                connectedServerUrl = baseUrl,
                 frequencyHz = resolvedFrequency,
                 mode = resolvedMode,
                 bandwidthLowHz = resolvedBandwidth.lowHz,
@@ -363,6 +371,7 @@ class RadioViewModel(
         sessionRepository.disconnect()
         _uiState.value = _uiState.value.copy(
             isConnected = false,
+            connectedServerUrl = null,
             statusText = "Disconnected"
         )
     }
@@ -822,6 +831,32 @@ class RadioViewModel(
         }
     }
 
+    fun applyServerUrl(serverUrl: String) {
+        val normalizedServerUrl = normalizeServerUrl(serverUrl)
+        val previousConfiguredServerUrl = _uiState.value.serverUrl
+        val wasConnected = _uiState.value.isConnected
+        if (normalizedServerUrl == previousConfiguredServerUrl) {
+            return
+        }
+
+        baseUrl = normalizedServerUrl
+        _uiState.value = _uiState.value.copy(
+            serverUrl = normalizedServerUrl,
+            statusText = if (wasConnected) "Servidor actualizado, reconectando..." else "Servidor actualizado"
+        )
+
+        viewModelScope.launch {
+            settingsStore.saveServerUrl(normalizedServerUrl)
+        }
+
+        loadBands()
+
+        if (wasConnected) {
+            disconnect()
+            connect()
+        }
+    }
+
     fun resetPersistedSettings() {
         val defaultBandwidth = deriveBandwidthForMode(DEFAULT_MODE)
         sessionRepository.setAudioVolume(DEFAULT_AUDIO_VOLUME)
@@ -856,5 +891,21 @@ class RadioViewModel(
     override fun onCleared() {
         sessionRepository.disconnect()
         super.onCleared()
+    }
+
+    private fun normalizeServerUrl(serverUrl: String): String {
+        val trimmedServerUrl = serverUrl.trim()
+        if (trimmedServerUrl.isEmpty()) {
+            return DEFAULT_SERVER_URL
+        }
+        val withScheme = if (
+            trimmedServerUrl.startsWith("http://") ||
+            trimmedServerUrl.startsWith("https://")
+        ) {
+            trimmedServerUrl
+        } else {
+            "https://$trimmedServerUrl"
+        }
+        return if (withScheme.endsWith("/")) withScheme else "$withScheme/"
     }
 }

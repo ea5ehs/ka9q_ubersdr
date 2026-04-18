@@ -13,6 +13,7 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
@@ -67,6 +68,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -241,6 +243,7 @@ fun RadioScreen(
         10_000L -> "10 kHz"
         else -> "${uiState.tuningStepHz} Hz"
     }
+    var serverUrlInput by remember { mutableStateOf(uiState.serverUrl) }
     val decrementInteractionSource = remember { MutableInteractionSource() }
     val incrementInteractionSource = remember { MutableInteractionSource() }
     val decrementPressed by decrementInteractionSource.collectIsPressedAsState()
@@ -282,6 +285,10 @@ fun RadioScreen(
 
     LaunchedEffect(uiState.keepScreenOn) {
         view.keepScreenOn = uiState.keepScreenOn
+    }
+
+    LaunchedEffect(uiState.serverUrl) {
+        serverUrlInput = uiState.serverUrl
     }
 
     LaunchedEffect(decrementPressed) {
@@ -629,6 +636,37 @@ fun RadioScreen(
                 }
             }
 
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 6.dp)
+                    .height(if (isCompactLayout) 24.dp else 26.dp)
+                    .background(Color(0xFF10161D))
+                    .border(1.dp, Color.White.copy(alpha = 0.16f)),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                BasicTextField(
+                    value = serverUrlInput,
+                    onValueChange = { serverUrlInput = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp),
+                    textStyle = TextStyle(
+                        color = Color.White.copy(alpha = 0.92f),
+                        fontSize = MaterialTheme.typography.bodySmall.fontSize
+                    ),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Uri,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = { viewModel.applyServerUrl(serverUrlInput) }
+                    ),
+                    cursorBrush = SolidColor(Color.White)
+                )
+            }
+
             IconButton(
                 onClick = viewModel::togglePower,
                 modifier = Modifier.height(powerButtonHeight)
@@ -671,7 +709,7 @@ fun RadioScreen(
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
-                                text = "UberSDR Android App beta 0.6",
+                                text = "UberSDR Android App 0.71b",
                                 color = Color.White,
                                 style = MaterialTheme.typography.titleMedium,
                                 textAlign = TextAlign.Center

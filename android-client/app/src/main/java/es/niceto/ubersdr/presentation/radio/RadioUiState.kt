@@ -4,6 +4,8 @@ import es.niceto.ubersdr.data.network.dto.BandDto
 import es.niceto.ubersdr.model.RadioMode
 
 data class RadioUiState(
+    val serverUrl: String = "https://ubersdr.niceto.es/",
+    val connectedServerUrl: String? = null,
     val frequencyHz: Long = 14_175_000L,
     val mode: RadioMode = RadioMode.USB,
     val bandwidthLowHz: Int = 150,

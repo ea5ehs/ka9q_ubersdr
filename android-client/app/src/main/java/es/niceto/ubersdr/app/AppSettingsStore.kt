@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.map
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "app_settings")
 
 data class AppSettings(
+    val serverUrl: String = DEFAULT_SERVER_URL,
     val frequencyHz: Long = DEFAULT_FREQUENCY_HZ,
     val mode: RadioMode = DEFAULT_MODE,
     val tuningStepHz: Long = DEFAULT_TUNING_STEP_HZ,
@@ -28,6 +29,7 @@ data class AppSettings(
     val cwAutoTuneAveraging: Int = DEFAULT_CW_AUTOTUNE_AVERAGING
 )
 
+const val DEFAULT_SERVER_URL = "https://ubersdr.niceto.es/"
 const val DEFAULT_FREQUENCY_HZ = 14_175_000L
 val DEFAULT_MODE = RadioMode.USB
 const val DEFAULT_TUNING_STEP_HZ = 1_000L
@@ -38,6 +40,7 @@ const val DEFAULT_CW_AUTOTUNE_AVERAGING = 6
 
 class AppSettingsStore(private val context: Context) {
     private companion object {
+        val SERVER_URL_KEY = stringPreferencesKey("server_url")
         val FREQUENCY_KEY = longPreferencesKey("frequency_hz")
         val MODE_KEY = stringPreferencesKey("mode")
         val TUNING_STEP_KEY = longPreferencesKey("tuning_step_hz")
@@ -55,6 +58,9 @@ class AppSettingsStore(private val context: Context) {
         }
         .map { preferences ->
             AppSettings(
+                serverUrl = preferences[SERVER_URL_KEY]
+                    ?.takeIf { it.isNotBlank() }
+                    ?: DEFAULT_SERVER_URL,
                 frequencyHz = preferences[FREQUENCY_KEY]
                     ?.takeIf { it in 10_000L..30_000_000L }
                     ?: DEFAULT_FREQUENCY_HZ,
@@ -80,6 +86,10 @@ class AppSettingsStore(private val context: Context) {
 
     suspend fun saveFrequency(frequencyHz: Long) {
         context.dataStore.edit { it[FREQUENCY_KEY] = frequencyHz }
+    }
+
+    suspend fun saveServerUrl(serverUrl: String) {
+        context.dataStore.edit { it[SERVER_URL_KEY] = serverUrl }
     }
 
     suspend fun saveMode(mode: RadioMode) {

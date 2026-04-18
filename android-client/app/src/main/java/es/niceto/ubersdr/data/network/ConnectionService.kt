@@ -8,16 +8,32 @@ import es.niceto.ubersdr.data.network.dto.DescriptionResponseDto
 class ConnectionService(
     private val api: ConnectionApi
 ) {
-    suspend fun postConnection(userSessionId: String, password: String? = null): ConnectionResponseDto {
+    suspend fun postConnection(
+        baseUrl: String,
+        userSessionId: String,
+        password: String? = null
+    ): ConnectionResponseDto {
         return api.postConnection(
-            ConnectionRequestDto(
+            url = buildApiUrl(baseUrl, "connection"),
+            request = ConnectionRequestDto(
                 userSessionId = userSessionId,
                 password = password
             )
         )
     }
 
-    suspend fun getDescription(): DescriptionResponseDto = api.getDescription()
+    suspend fun getDescription(baseUrl: String): DescriptionResponseDto =
+        api.getDescription(buildApiUrl(baseUrl, "api/description"))
 
-    suspend fun getBands(): List<BandDto> = api.getBands()
+    suspend fun getBands(baseUrl: String): List<BandDto> =
+        api.getBands(buildApiUrl(baseUrl, "api/bands"))
+
+    private fun buildApiUrl(baseUrl: String, path: String): String {
+        val normalizedBaseUrl = if (baseUrl.endsWith("/")) {
+            baseUrl
+        } else {
+            "$baseUrl/"
+        }
+        return normalizedBaseUrl + path
+    }
 }

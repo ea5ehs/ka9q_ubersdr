@@ -143,6 +143,8 @@ Elementos movidos al menú superior:
 - `MIN` con bordes negativos
 - barra superior inexistente o sin iconos reales
 - duplicidad de `power` entre barra y línea rápida
+- al cambiar la frecuencia de sintonía desde la ruta común de `tune`, si la nueva frecuencia ya cae dentro de la ventana visible actual del waterfall, se actualiza solo la sintonía; no cambia el centro visible ni el nivel de zoom
+- si la nueva frecuencia queda fuera de la ventana visible actual, el waterfall se recentra para llevar esa frecuencia al centro, manteniendo el mismo nivel de zoom activo
 
 ## 9. Criterio actual de compactación móvil
 

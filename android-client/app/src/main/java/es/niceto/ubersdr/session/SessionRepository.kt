@@ -28,11 +28,12 @@ class SessionRepository(
         val defaultMode: String? = null
     )
 
-    suspend fun openConnection(): BootstrapResult {
+    suspend fun openConnection(baseUrl: String): BootstrapResult {
         return try {
             val sessionId = newSessionId()
 
             val response = connectionService.postConnection(
+                baseUrl = baseUrl,
                 userSessionId = sessionId
             )
 
@@ -51,15 +52,15 @@ class SessionRepository(
         }
     }
 
-    suspend fun bootstrapSession(): BootstrapResult {
-        val connectionResult = openConnection()
+    suspend fun bootstrapSession(baseUrl: String): BootstrapResult {
+        val connectionResult = openConnection(baseUrl)
 
         if (!connectionResult.allowed) {
             return connectionResult
         }
 
         return try {
-            val description = connectionService.getDescription()
+            val description = connectionService.getDescription(baseUrl)
 
             connectionResult.copy(
                 defaultFrequency = description.defaultFrequency,
@@ -73,8 +74,8 @@ class SessionRepository(
         }
     }
 
-    suspend fun getBands(): List<BandDto> {
-        return connectionService.getBands()
+    suspend fun getBands(baseUrl: String): List<BandDto> {
+        return connectionService.getBands(baseUrl)
     }
 
     fun connectAudio(

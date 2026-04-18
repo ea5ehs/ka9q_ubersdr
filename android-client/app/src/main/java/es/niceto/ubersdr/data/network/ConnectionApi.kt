@@ -7,14 +7,18 @@ import es.niceto.ubersdr.data.network.dto.BandDto
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.Url
 
 interface ConnectionApi {
-    @POST("connection")
-    suspend fun postConnection(@Body request: ConnectionRequestDto): ConnectionResponseDto
+    @POST
+    suspend fun postConnection(
+        @Url url: String,
+        @Body request: ConnectionRequestDto
+    ): ConnectionResponseDto
 
-    @GET("api/description")
-    suspend fun getDescription(): DescriptionResponseDto
+    @GET
+    suspend fun getDescription(@Url url: String): DescriptionResponseDto
 
-    @GET("api/bands")
-    suspend fun getBands(): List<BandDto>
+    @GET
+    suspend fun getBands(@Url url: String): List<BandDto>
 }
